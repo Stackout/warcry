@@ -1,0 +1,97 @@
+name = "Fishing"
+
+[settings]
+min_confidence = 0.75
+push_to_talk_mode = "hold"
+
+[target]
+title = "Minecraft"
+mode = "focus_restore"
+
+[[command]]
+name = "cast"
+phrase = "[cast;throw] [the;my;] [line;rod;pole;]"
+actions = [{ do = "click", button = "right" }]
+
+[[command]]
+name = "reel"
+phrase = "[reel;pull] [it;] in;hook [it;];reel"
+actions = [{ do = "click", button = "right" }]
+
+[[command]]
+name = "recast"
+phrase = "[recast;reel and cast;again]"
+actions = [
+  { do = "click", button = "right" },
+  { do = "wait_random", min_ms = 400, max_ms = 700 },
+  { do = "click", button = "right" },
+]
+
+[[command]]
+name = "hold reel"
+phrase = "[hold;keep] reeling"
+stop_others = true
+actions = [
+  { do = "mouse_down", button = "right" },
+  { do = "repeat", actions = [{ do = "wait", ms = 1000 }] },
+]
+
+[[command]]
+name = "auto fish"
+phrase = "[start;begin] [auto;] fishing"
+stop_others = true
+actions = [
+  { do = "say", text = "fishing" },
+  { do = "repeat", actions = [
+    { do = "click", button = "right" },
+    { do = "wait_random", min_ms = 15000, max_ms = 20000 },
+    { do = "click", button = "right" },
+    { do = "wait_random", min_ms = 800, max_ms = 1200 },
+  ] },
+]
+
+[[command]]
+name = "stop"
+phrase = "stop;stop [fishing;reeling;everything];cancel"
+hotkey = "ctrl+shift+x"
+no_target = true
+always_active = true
+actions = [{ do = "stop_all" }]
+
+[[command]]
+name = "inventory"
+phrase = "[open;check] [inventory;bag;backpack]"
+actions = [{ do = "press", key = "e" }]
+
+[[command]]
+name = "eat"
+phrase = "eat;eat [food;something]"
+actions = [{ do = "click", button = "right", hold_ms = 1800 }]
+
+[[command]]
+name = "slot one"
+phrase = "[slot;switch to] one"
+actions = [{ do = "press", key = "1" }]
+
+[[command]]
+name = "slot two"
+phrase = "[slot;switch to] two"
+actions = [{ do = "press", key = "2" }]
+
+[[command]]
+name = "slot three"
+phrase = "[slot;switch to] three"
+actions = [{ do = "press", key = "3" }]
+
+[[command]]
+name = "stop listening"
+phrase = "[stop;pause] listening;go to sleep"
+no_target = true
+actions = [{ do = "listening", state = "off" }, { do = "say", text = "sleeping" }]
+
+[[command]]
+name = "start listening"
+phrase = "[start;resume] listening;wake up"
+no_target = true
+always_active = true
+actions = [{ do = "listening", state = "on" }, { do = "say", text = "listening" }]

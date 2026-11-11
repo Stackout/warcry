@@ -1,0 +1,39 @@
+name = "Starter"
+
+[settings]
+min_confidence = 0.78
+
+[[command]]
+phrase = "[open;show] task manager"
+hotkey = "ctrl+alt+f12"
+actions = [{ do = "combo", keys = "ctrl+shift+escape" }]
+
+[[command]]
+phrase = "[close;dismiss] [that;this;the] [menu;dialog;popup]"
+actions = [{ do = "press", key = "escape" }]
+
+[[command]]
+phrase = "say hello"
+actions = [{ do = "type", text = "hello from warcry" }, { do = "press", key = "enter" }]
+
+[[command]]
+phrase = "scroll down"
+actions = [{ do = "scroll", amount = 5 }]
+
+[[command]]
+phrase = "scroll up"
+actions = [{ do = "scroll", amount = -5 }]
+
+[[command]]
+phrase = "stop;cancel"
+always_active = true
+actions = [{ do = "stop_all" }]
+
+[[command]]
+phrase = "[stop;pause] listening"
+actions = [{ do = "listening", state = "off" }]
+
+[[command]]
+phrase = "[start;resume] listening"
+always_active = true
+actions = [{ do = "listening", state = "on" }]

@@ -1,0 +1,601 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use anyhow::{Context, Result, anyhow, ensure};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use tauri::image::Image;
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent, Wry};
+use tauri_plugin_opener::OpenerExt;
+use tracing::field::{Field, Visit};
+use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer};
+use warcry::engine::{Engine, Note, Notify, Options};
+use warcry::matcher::Matcher;
+use warcry::profile::Profile;
+use warcry::{audio, models, window};
+
+const TRAY_ON: &[u8] = include_bytes!("../icons/tray.png");
+const TRAY_OFF: &[u8] = include_bytes!("../icons/tray-paused.png");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct Config {
+    profile: Option<PathBuf>,
+    device: Option<String>,
+    model: Option<String>,
+    auto_start: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            profile: None,
+            device: None,
+            model: None,
+            auto_start: true,
+        }
+    }
+}
+
+fn home() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("warcry")
+}
+
+fn profiles() -> Vec<PathBuf> {
+    std::fs::read_dir(home())
+        .map(|d| {
+            d.filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+impl Config {
+    fn load() -> Config {
+        std::fs::read_to_string(home().join("app.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    fn save(&self) -> Result<()> {
+        std::fs::create_dir_all(home())?;
+        std::fs::write(home().join("app.json"), serde_json::to_string_pretty(self)?)?;
+        Ok(())
+    }
+
+    fn profile(&self) -> Option<PathBuf> {
+        self.profile
+            .clone()
+            .filter(|p| p.is_file())
+            .or_else(|| profiles().into_iter().next())
+    }
+}
+
+struct Tray {
+    icon: TrayIcon,
+    listening: CheckMenuItem<Wry>,
+    toggle: MenuItem<Wry>,
+}
+
+struct App {
+    engine: Mutex<Option<Engine>>,
+    config: Mutex<Config>,
+    busy: AtomicBool,
+    tray: Mutex<Option<Tray>>,
+    failure: Mutex<Option<String>>,
+}
+
+#[derive(Serialize)]
+struct CommandView {
+    name: String,
+    phrases: Vec<String>,
+    more: usize,
+    hotkey: Option<String>,
+    actions: usize,
+    always_active: bool,
+}
+
+#[derive(Serialize)]
+struct TargetView {
+    description: String,
+    mode: String,
+    found: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ModelView {
+    name: String,
+    about: String,
+    downloaded: bool,
+}
+
+#[derive(Serialize)]
+struct Snapshot {
+    running: bool,
+    busy: bool,
+    listening: bool,
+    config: Config,
+    profile: Option<PathBuf>,
+    profile_name: Option<String>,
+    profile_error: Option<String>,
+    profiles: Vec<PathBuf>,
+    commands: Vec<CommandView>,
+    target: Option<TargetView>,
+    push_to_talk: Option<String>,
+    devices: Vec<String>,
+    models: Vec<ModelView>,
+    model: String,
+    failure: Option<String>,
+}
+
+fn command_views(profile: &Profile) -> Vec<CommandView> {
+    let matcher = Matcher::build(profile).unwrap_or_default();
+    profile
+        .commands
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let phrases = matcher.phrases_for(i);
+            CommandView {
+                name: c.display_name(),
+                more: phrases.len().saturating_sub(4),
+                phrases: phrases.into_iter().take(4).map(String::from).collect(),
+                hotkey: c.hotkey.clone(),
+                actions: c.actions.len(),
+                always_active: c.always_active,
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn snapshot(state: State<App>) -> Snapshot {
+    let config = state.config.lock().clone();
+    let path = config.profile();
+    let loaded = path.as_ref().map(|p| Profile::load(p));
+    let profile = loaded.as_ref().and_then(|r| r.as_ref().ok());
+    let engine = state.engine.lock();
+    let model = config
+        .model
+        .clone()
+        .or_else(|| profile.map(|p| p.settings.model.clone()))
+        .unwrap_or_else(|| "base.en".into());
+    Snapshot {
+        running: engine.is_some(),
+        busy: state.busy.load(SeqCst),
+        listening: engine
+            .as_ref()
+            .is_some_and(|e| e.shared().listening.load(SeqCst)),
+        profile_error: loaded
+            .as_ref()
+            .and_then(|r| r.as_ref().err())
+            .map(|e| format!("{e:#}")),
+        profile_name: profile.map(|p| p.name.clone()).filter(|n| !n.is_empty()),
+        commands: profile.map(command_views).unwrap_or_default(),
+        target: profile.and_then(|p| p.target.as_ref()).map(|t| TargetView {
+            description: t.describe(),
+            mode: format!("{:?}", t.mode),
+            found: window::find(t).ok().map(|w| w.title),
+        }),
+        push_to_talk: profile.and_then(|p| p.settings.push_to_talk.clone()),
+        devices: audio::devices().unwrap_or_default(),
+        models: models::KNOWN
+            .iter()
+            .map(|(name, about)| ModelView {
+                name: name.to_string(),
+                about: about.to_string(),
+                downloaded: models::downloaded(name),
+            })
+            .collect(),
+        model,
+        failure: state.failure.lock().take(),
+        profiles: profiles(),
+        profile: path,
+        config,
+    }
+}
+
+fn emit_note(app: &AppHandle, note: &Note) {
+    app.emit("note", note).unwrap_or_default();
+}
+
+fn on_note(app: &AppHandle, note: Note) {
+    emit_note(app, &note);
+    if matches!(
+        note,
+        Note::Listening { .. } | Note::Ready { .. } | Note::Stopped
+    ) {
+        refresh_tray(app);
+    }
+}
+
+fn launch(app: &AppHandle) -> Result<()> {
+    let state = app.state::<App>();
+    let previous = state.engine.lock().take();
+    drop(previous);
+    let config = state.config.lock().clone();
+    let profile = config
+        .profile()
+        .ok_or_else(|| anyhow!("create a profile first"))?;
+    let handle = app.clone();
+    let notify: Notify = Arc::new(move |note| on_note(&handle, note));
+    let options = Options {
+        profile,
+        model: config.model,
+        device: config.device,
+        voice: true,
+        download: true,
+    };
+    let engine = Engine::start(options, notify)?;
+    *state.engine.lock() = Some(engine);
+    Ok(())
+}
+
+fn start_engine(app: &AppHandle) -> Result<()> {
+    let state = app.state::<App>();
+    ensure!(!state.busy.swap(true, SeqCst), "Warcry is already starting");
+    refresh_tray(app);
+    let result = launch(app);
+    state.busy.store(false, SeqCst);
+    refresh_tray(app);
+    app.emit("changed", ()).unwrap_or_default();
+    result
+}
+
+fn spawn_start(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = start_engine(&app) {
+            tracing::error!("starting Warcry: {e:#}");
+            let message = format!("Couldn't start: {e:#}");
+            *app.state::<App>().failure.lock() = Some(message.clone());
+            app.emit("failure", message).unwrap_or_default();
+        }
+    });
+}
+
+fn stop_engine(app: &AppHandle) {
+    let previous = app.state::<App>().engine.lock().take();
+    drop(previous);
+    refresh_tray(app);
+    app.emit("changed", ()).unwrap_or_default();
+}
+
+fn refresh_tray(app: &AppHandle) {
+    let state = app.state::<App>();
+    let listening = state
+        .engine
+        .lock()
+        .as_ref()
+        .map(|e| e.shared().listening.load(SeqCst));
+    let busy = state.busy.load(SeqCst);
+    if let Some(tray) = state.tray.lock().as_ref() {
+        paint_tray(tray, busy, listening);
+    }
+}
+
+fn paint_tray(tray: &Tray, busy: bool, listening: Option<bool>) {
+    let (label, tooltip, icon) = match (busy, listening) {
+        (true, _) => ("Starting…", "Warcry: starting", TRAY_OFF),
+        (false, None) => ("Start Warcry", "Warcry: stopped", TRAY_OFF),
+        (false, Some(true)) => ("Stop Warcry", "Warcry: listening", TRAY_ON),
+        (false, Some(false)) => ("Stop Warcry", "Warcry: paused", TRAY_OFF),
+    };
+    tray.toggle.set_text(label).unwrap_or_default();
+    tray.toggle.set_enabled(!busy).unwrap_or_default();
+    tray.listening
+        .set_enabled(listening.is_some())
+        .unwrap_or_default();
+    tray.listening
+        .set_checked(listening.unwrap_or(false))
+        .unwrap_or_default();
+    tray.icon.set_tooltip(Some(tooltip)).unwrap_or_default();
+    Image::from_bytes(icon)
+        .map(|i| tray.icon.set_icon(Some(i)))
+        .unwrap_or(Ok(()))
+        .unwrap_or_default();
+}
+
+fn show(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        w.show().unwrap_or_default();
+        w.unminimize().unwrap_or_default();
+        w.set_focus().unwrap_or_default();
+    }
+}
+
+fn toggle_listening(app: &AppHandle) {
+    if let Some(e) = app.state::<App>().engine.lock().as_ref() {
+        e.set_listening(!e.shared().listening.load(SeqCst));
+    }
+    refresh_tray(app);
+}
+
+fn on_menu(app: &AppHandle, id: &str) {
+    let running = app.state::<App>().engine.lock().is_some();
+    match (id, running) {
+        ("open", _) => show(app),
+        ("listening", _) => toggle_listening(app),
+        ("toggle", true) => stop_engine(app),
+        ("toggle", false) => spawn_start(app),
+        ("quit", _) => {
+            stop_engine(app);
+            app.exit(0);
+        }
+        _ => {}
+    }
+}
+
+fn build_tray(app: &AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, "open", "Open Warcry", true, None::<&str>)?;
+    let listening =
+        CheckMenuItem::with_id(app, "listening", "Listening", false, false, None::<&str>)?;
+    let toggle = MenuItem::with_id(app, "toggle", "Start Warcry", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Warcry", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &open,
+            &PredefinedMenuItem::separator(app)?,
+            &listening,
+            &toggle,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    let icon = TrayIconBuilder::with_id("warcry")
+        .icon(Image::from_bytes(TRAY_OFF)?)
+        .tooltip("Warcry")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| on_menu(app, event.id().as_ref()))
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    *app.state::<App>().tray.lock() = Some(Tray {
+        icon,
+        listening,
+        toggle,
+    });
+    Ok(())
+}
+
+fn fail(e: anyhow::Error) -> String {
+    format!("{e:#}")
+}
+
+#[tauri::command]
+async fn start(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || start_engine(&app))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(fail)
+}
+
+#[tauri::command]
+fn stop(app: AppHandle) {
+    stop_engine(&app);
+}
+
+#[tauri::command]
+fn set_listening(app: AppHandle, on: bool) {
+    if let Some(e) = app.state::<App>().engine.lock().as_ref() {
+        e.set_listening(on);
+    }
+    refresh_tray(&app);
+}
+
+#[tauri::command]
+fn set_config(app: AppHandle, config: Config) -> Result<(), String> {
+    let state = app.state::<App>();
+    config.save().map_err(fail)?;
+    let restart = {
+        let mut current = state.config.lock();
+        let changed = current.profile != config.profile
+            || current.device != config.device
+            || current.model != config.model;
+        *current = config;
+        changed && state.engine.lock().is_some()
+    };
+    if restart {
+        spawn_start(&app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn create_profile(app: AppHandle, example: String) -> Result<(), String> {
+    let source = match example.as_str() {
+        "starter" => warcry::EXAMPLE_STARTER,
+        _ => warcry::EXAMPLE_FISHING,
+    };
+    let name = |n: u32| match n {
+        0 => format!("{example}.toml"),
+        n => format!("{example}-{n}.toml"),
+    };
+    let path = (0..)
+        .map(|n| home().join(name(n)))
+        .find(|p| !p.exists())
+        .unwrap_or_default();
+    std::fs::create_dir_all(home())
+        .and_then(|_| std::fs::write(&path, source))
+        .map_err(|e| e.to_string())?;
+    let config = Config {
+        profile: Some(path),
+        ..app.state::<App>().config.lock().clone()
+    };
+    set_config(app, config)
+}
+
+#[tauri::command]
+fn open_profile(app: AppHandle) -> Result<(), String> {
+    let path = app
+        .state::<App>()
+        .config
+        .lock()
+        .profile()
+        .context("no profile yet")
+        .map_err(fail)?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_folder(app: AppHandle) -> Result<(), String> {
+    std::fs::create_dir_all(home()).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(home().to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn download_model(app: AppHandle, name: String) -> Result<(), String> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let progress = |read, total| {
+            emit_note(
+                &app,
+                &Note::Downloading {
+                    model: name.clone(),
+                    read,
+                    total,
+                },
+            )
+        };
+        models::fetch(&name, &progress).map(drop)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    result.map_err(fail)
+}
+
+#[tauri::command]
+fn try_phrase(state: State<App>, text: String) -> Result<String, String> {
+    let path = state
+        .config
+        .lock()
+        .profile()
+        .context("no profile yet")
+        .map_err(fail)?;
+    let profile = Profile::load(&path).map_err(fail)?;
+    let threshold = profile.settings.min_confidence;
+    let best = Matcher::build(&profile)
+        .map_err(fail)?
+        .best(&text, |_| true);
+    Ok(best
+        .map(|m| {
+            let verdict = ["would not fire", "would fire"][(m.score >= threshold) as usize];
+            format!(
+                "→ {} via “{}” ({:.0}%), {verdict}",
+                profile.commands[m.command].display_name(),
+                m.phrase,
+                m.score * 100.0
+            )
+        })
+        .unwrap_or_else(|| "No voice commands in this profile".into()))
+}
+
+#[derive(Clone, Serialize)]
+struct LogLine {
+    level: String,
+    message: String,
+}
+
+struct Forward(AppHandle);
+
+struct Message(String);
+
+impl Visit for Message {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl<S: tracing::Subscriber> Layer<S> for Forward {
+    fn on_event(&self, event: &tracing::Event<'_>, _: LayerContext<'_, S>) {
+        let mut message = Message(String::new());
+        event.record(&mut message);
+        let line = LogLine {
+            level: event.metadata().level().to_string(),
+            message: message.0,
+        };
+        self.0.emit("log", line).unwrap_or_default();
+    }
+}
+
+fn init_logging(app: AppHandle) {
+    tracing_subscriber::registry()
+        .with(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("warcry=info,warcry_app=info")),
+        )
+        .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(Forward(app))
+        .try_init()
+        .unwrap_or_default();
+}
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
+        .plugin(tauri_plugin_opener::init())
+        .manage(App {
+            engine: Mutex::new(None),
+            config: Mutex::new(Config::load()),
+            busy: AtomicBool::new(false),
+            tray: Mutex::new(None),
+            failure: Mutex::new(None),
+        })
+        .setup(|app| {
+            init_logging(app.handle().clone());
+            build_tray(app.handle())?;
+            let config = app.state::<App>().config.lock().clone();
+            if config.auto_start && config.profile().is_some() {
+                spawn_start(app.handle());
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                window.hide().unwrap_or_default();
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            snapshot,
+            start,
+            stop,
+            set_listening,
+            set_config,
+            create_profile,
+            open_profile,
+            open_folder,
+            download_model,
+            try_phrase
+        ])
+        .run(tauri::generate_context!())
+        .expect("failed to start Warcry");
+}
