@@ -1,0 +1,171 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  GGML_NATIVE: "OFF"
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, x86: true, bundles: "deb,appimage" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, x86: true, bundles: "nsis,msi" }
+          - { os: macos-latest, target: aarch64-apple-darwin, x86: false, bundles: "app,dmg" }
+          - { os: macos-15-intel, target: x86_64-apple-darwin, x86: true, bundles: "app,dmg" }
+    env:
+      PKG: warcry-cli-${{ github.ref_name }}-${{ matrix.target }}
+      HAS_SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 25
+        run: .github/scripts/linux-deps.sh
+      - name: Portable x86-64 SIMD baseline (AVX2/FMA, 2013+ CPUs)
+        if: matrix.x86
+        shell: bash
+        run: printf 'GGML_AVX=ON\nGGML_AVX2=ON\nGGML_FMA=ON\nGGML_F16C=ON\n' >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-binstall
+      - name: Install Tauri CLI
+        shell: bash
+        run: cargo binstall -y --locked tauri-cli@^2 || cargo install --locked tauri-cli --version "^2"
+
+      - run: cargo build -p warcry --release --locked --target ${{ matrix.target }}
+
+      - name: Import Developer ID certificate
+        if: runner.os == 'macOS' && env.HAS_SIGNING == 'true'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          kpass="$(uuidgen)"
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kpass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kpass" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$kpass" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          printf '%s' "$API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Sign command-line binary
+        if: runner.os == 'macOS' && env.HAS_SIGNING == 'true'
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          bin="target/${{ matrix.target }}/release/warcry"
+          codesign --force --timestamp --options runtime --entitlements macos/warcry.entitlements --sign "$IDENTITY" "$bin"
+          codesign --verify --strict --verbose=2 "$bin"
+      - name: Notarize command-line binary
+        id: notarize_cli
+        if: runner.os == 'macOS' && env.HAS_SIGNING == 'true'
+        continue-on-error: true
+        env:
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          ditto -c -k --keepParent "target/${{ matrix.target }}/release/warcry" "$RUNNER_TEMP/cli.zip"
+          .github/scripts/notarize.sh "$RUNNER_TEMP/cli.zip"
+
+      - name: Build app installers
+        shell: bash
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        working-directory: app
+        run: |
+          if [ "$HAS_SIGNING" = "true" ] && [ "$RUNNER_OS" = "macOS" ]; then export APPLE_SIGNING_IDENTITY="$IDENTITY"; fi
+          cargo tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - name: Notarize app
+        id: notarize_app
+        if: runner.os == 'macOS' && env.HAS_SIGNING == 'true'
+        continue-on-error: true
+        env:
+          API_KEY: ${{ secrets.APPLE_API_KEY }}
+          API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          for dmg in target/${{ matrix.target }}/release/bundle/dmg/*.dmg; do
+            .github/scripts/notarize.sh "$dmg"
+            xcrun stapler staple "$dmg"
+          done
+      - name: Warn when notarization fails
+        if: steps.notarize_cli.outcome == 'failure' || steps.notarize_app.outcome == 'failure'
+        run: echo "::warning title=Not notarized::${{ matrix.target }} is signed but Apple notarization failed. See the Notarize steps (an expired Apple Developer agreement returns HTTP 403)."
+      - name: Remove signing keychain
+        if: always() && runner.os == 'macOS' && env.HAS_SIGNING == 'true'
+        run: |
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+      - name: Stage files
+        shell: bash
+        run: |
+          shopt -s nullglob
+          release="target/${{ matrix.target }}/release"
+          mkdir -p "dist/$PKG"
+          cp README.md LICENSE "dist/$PKG/"
+          cp -r profiles "dist/$PKG/"
+          bins=("$release"/warcry.ex[e])
+          test ${#bins[@]} -gt 0 || bins=("$release"/warcry)
+          cp "${bins[@]}" "dist/$PKG/"
+          installers=("$release"/bundle/nsis/*.exe "$release"/bundle/msi/*.msi "$release"/bundle/dmg/*.dmg "$release"/bundle/deb/*.deb "$release"/bundle/appimage/*.AppImage)
+          test ${#installers[@]} -gt 0
+          cp "${installers[@]}" dist/
+          ls -la dist
+      - name: Archive CLI (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/$env:PKG" -DestinationPath "dist/$env:PKG.zip"
+      - name: Archive CLI (tar.gz)
+        if: runner.os != 'Windows'
+        run: tar -C dist -czf "dist/$PKG.tar.gz" "$PKG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.exe
+            dist/*.msi
+            dist/*.dmg
+            dist/*.deb
+            dist/*.AppImage
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

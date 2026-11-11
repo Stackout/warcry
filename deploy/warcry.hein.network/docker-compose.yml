@@ -1,0 +1,39 @@
+name: warcry-heinnetwork
+
+networks:
+  traefik_default:
+    external: true
+
+services:
+  hub:
+    build:
+      context: ../..
+      dockerfile: hub/Dockerfile
+    restart: unless-stopped
+    environment:
+      WARCRY_HUB_SECRET: ${WARCRY_HUB_SECRET:?generate one with openssl rand -hex 32}
+    command: ["--port", "8080"]
+    expose:
+      - "8080"
+    networks:
+      - traefik_default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_default"
+      - "traefik.http.services.warcry.loadbalancer.server.port=8080"
+
+      - "traefik.http.routers.warcry.rule=Host(`warcry.hein.network`)"
+      - "traefik.http.routers.warcry.entrypoints=websecure"
+      - "traefik.http.routers.warcry.tls.certresolver=cloudflare"
+      - "traefik.http.routers.warcry.middlewares=warcry-auth@docker"
+      - "traefik.http.routers.warcry.service=warcry"
+
+      - "traefik.http.routers.warcry-host.rule=Host(`warcry.hein.network`) && PathPrefix(`/host`)"
+      - "traefik.http.routers.warcry-host.entrypoints=websecure"
+      - "traefik.http.routers.warcry-host.tls.certresolver=cloudflare"
+      - "traefik.http.routers.warcry-host.priority=100"
+      - "traefik.http.routers.warcry-host.service=warcry"
+
+      - "traefik.http.middlewares.warcry-auth.forwardauth.address=http://hearth:8080/api/verify?entitlement=any"
+      - "traefik.http.middlewares.warcry-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.warcry-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Admin,X-Auth-Entitlements"

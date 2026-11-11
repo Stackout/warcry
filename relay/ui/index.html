@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0d0618">
+<title>Warcry</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>Warcry</h1>
+  <div id="status" class="status"><span class="dot"></span><span id="statusText">connecting</span></div>
+</header>
+<button id="enable" class="enable" type="button">Tap to enable sound</button>
+<main id="rigs"></main>
+<p id="empty" class="empty">No windows attached yet. Start Warcry on your PC and cast a line.</p>
+<section id="stats" class="stats"></section>
+<footer>
+  <button id="wake" class="toggle" type="button">Keep screen on</button>
+  <button id="sound" class="toggle" type="button">test sound</button>
+  <span id="latency" class="latency"></span>
+</footer>
+<script src="/app.js"></script>
+</body>
+</html>
