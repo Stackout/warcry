@@ -61,12 +61,12 @@ mod tests {
     fn content_length_matches_the_body() {
         let response = text("/style.css");
         let declared: usize = response
-            .split("Content-Length: ")
-            .nth(1)
+            .split_once("Content-Length: ")
+            .map(|split| split.1)
             .and_then(|rest| rest.split("\r\n").next())
             .and_then(|n| n.parse().ok())
             .unwrap();
-        let body = response.split("\r\n\r\n").nth(1).unwrap();
+        let body = response.split_once("\r\n\r\n").unwrap().1;
         assert_eq!(declared, body.len());
     }
 }

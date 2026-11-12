@@ -143,9 +143,7 @@ fn accept(
                 let spawned = std::thread::Builder::new()
                     .name(format!("relay-{peer}"))
                     .spawn(move || session::serve(stream, peer, downlink, presses, admit, quit));
-                spawned
-                    .err()
-                    .map(|e| tracing::warn!("cannot serve {peer}: {e}"));
+                drop(spawned.inspect_err(|e| tracing::warn!("cannot serve {peer}: {e}")));
             }
         }
     }

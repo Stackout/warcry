@@ -41,9 +41,7 @@ pub fn serve(
         true => socket(stream, downlink, presses, admit, quit),
         false => page(stream),
     };
-    served
-        .err()
-        .map(|e| tracing::debug!("session with {peer} ended: {e:#}"));
+    drop(served.inspect_err(|e| tracing::debug!("session with {peer} ended: {e:#}")));
 }
 
 fn wants_websocket(stream: &TcpStream) -> bool {
@@ -84,7 +82,7 @@ fn socket(
         let inbound = pump(&mut socket, &mut hosted)?;
         let outbound = forward(&mut socket, &downlink, &hosted)?;
         timeout(&mut socket, &hosted)?;
-        (!inbound && !outbound).then(|| std::thread::yield_now());
+        (!inbound && !outbound).then(std::thread::yield_now);
     }
     Ok(())
 }
