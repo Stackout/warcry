@@ -108,8 +108,33 @@ body.alarm .rig.bite {
   animation: shout 0.16s ease-in-out infinite alternate;
 }
 
+@keyframes rainbow {
+  0% { background: #ff0048; border-color: #fff; }
+  16% { background: #ff7a00; border-color: #ffe9a8; }
+  33% { background: #f2e000; border-color: #fff; }
+  50% { background: #00e36a; border-color: #d4ffe8; }
+  66% { background: #00c2ff; border-color: #fff; }
+  83% { background: #9a4bff; border-color: #efe2ff; }
+  100% { background: #ff0048; border-color: #fff; }
+}
+
+@keyframes jitter {
+  0% { transform: translateX(0) scale(1) rotate(0deg); }
+  20% { transform: translateX(-4px) scale(1.03) rotate(-1deg); }
+  45% { transform: translateX(4px) scale(1.05) rotate(1deg); }
+  70% { transform: translateX(-3px) scale(1.03) rotate(-1deg); }
+  100% { transform: translateX(0) scale(1) rotate(0deg); }
+}
+
 body.alarm .rig.bite .reel[data-label="reel"] {
-  animation: pulse 0.22s ease-in-out infinite alternate;
+  animation:
+    rainbow 0.4s linear infinite,
+    jitter 0.22s ease-in-out infinite,
+    pulse 0.2s ease-in-out infinite alternate;
+  color: #fff;
+  font-size: 26px;
+  letter-spacing: 0.16em;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -119,6 +144,10 @@ body.alarm .rig.bite .reel[data-label="reel"] {
     animation: none;
   }
   body.alarm { background: #6b3300; }
+  body.alarm .rig.bite .reel[data-label="reel"] {
+    background: var(--glow);
+    color: #2b1600;
+  }
 }
 
 .ring { height: 4px; border-radius: 2px; background: var(--edge); overflow: hidden; }

@@ -190,6 +190,13 @@ impl Gate {
         }
     }
 
+    pub fn trusting(now_ms: u64) -> Self {
+        Gate {
+            authed: true,
+            ..Gate::new(Token::from_bytes([0; TOKEN_LEN]), now_ms)
+        }
+    }
+
     pub fn is_authenticated(&self) -> bool {
         self.authed
     }
@@ -344,6 +351,15 @@ mod tests {
             gate.authenticate(&token(1), crate::PROTOCOL, HANDSHAKE_MS + 1),
             Err(Denied::HandshakeTimeout)
         );
+    }
+
+    #[test]
+    fn a_trusting_gate_needs_no_token_but_still_refuses_replays() {
+        let mut gate = Gate::trusting(0);
+        assert!(gate.is_authenticated());
+        assert_eq!(gate.admit(&press(1), 0), Ok(()));
+        assert_eq!(gate.admit(&press(1), 1), Err(Denied::Replay));
+        assert!(!gate.handshake_expired(HANDSHAKE_MS * 10));
     }
 
     #[test]

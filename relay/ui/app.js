@@ -8,7 +8,7 @@ const token = (() => {
   const fromUrl = new URLSearchParams(location.search).get('t')
   fromUrl && localStorage.setItem('warcry.token', fromUrl)
   fromUrl && history.replaceState({}, '', location.pathname)
-  return localStorage.getItem('warcry.token') || ''
+  return localStorage.getItem('warcry.token') || '0'.repeat(64)
 })()
 
 const state = { socket: null, seq: 0, rigs: new Map(), chime: null, pending: new Set(), alarm: null }
@@ -303,4 +303,4 @@ document.addEventListener('click', unlock)
 document.addEventListener('touchstart', unlock)
 el('sound').addEventListener('click', () => ring(3))
 setInterval(countdown, 200)
-token ? connect() : setStatus(false, 'no pairing token; scan the QR from Warcry')
+connect()

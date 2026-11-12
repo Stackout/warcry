@@ -13,17 +13,32 @@ const READ_POLL: Duration = Duration::from_millis(5);
 const PEEK: usize = 1_024;
 const LOCAL: warcry_link::SessionId = 0;
 
+#[derive(Clone)]
+pub struct Admit {
+    pub token: Token,
+    pub trust: bool,
+    pub rigs: Rigs,
+}
+
+impl Admit {
+    fn hosted(self, presses: Sender<Press>) -> Hosted {
+        match self.trust {
+            true => Hosted::trusting(self.rigs, presses),
+            false => Hosted::new(self.token, self.rigs, presses),
+        }
+    }
+}
+
 pub fn serve(
     stream: TcpStream,
     peer: SocketAddr,
     downlink: Receiver<Downlink>,
     presses: Sender<Press>,
-    rigs: Rigs,
-    token: Token,
+    admit: Admit,
     quit: Arc<AtomicBool>,
 ) {
     let served = match wants_websocket(&stream) {
-        true => socket(stream, downlink, presses, rigs, token, quit),
+        true => socket(stream, downlink, presses, admit, quit),
         false => page(stream),
     };
     served
@@ -58,13 +73,12 @@ fn socket(
     stream: TcpStream,
     downlink: Receiver<Downlink>,
     presses: Sender<Press>,
-    rigs: Rigs,
-    token: Token,
+    admit: Admit,
     quit: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     stream.set_read_timeout(Some(READ_POLL))?;
     let mut socket = tungstenite::accept(stream)?;
-    let mut hosted = Hosted::new(token, rigs, presses);
+    let mut hosted = admit.hosted(presses);
     hosted.joined(LOCAL);
     while !quit.load(SeqCst) {
         let inbound = pump(&mut socket, &mut hosted)?;

@@ -5,6 +5,7 @@ use warcry_link::{Denied, Downlink, Gate, Press, SessionId, Token, Uplink, now_m
 
 pub struct Hosted {
     token: Token,
+    trust: bool,
     rigs: Rigs,
     presses: Sender<Press>,
     gates: HashMap<SessionId, Gate>,
@@ -14,6 +15,17 @@ impl Hosted {
     pub fn new(token: Token, rigs: Rigs, presses: Sender<Press>) -> Hosted {
         Hosted {
             token,
+            trust: false,
+            rigs,
+            presses,
+            gates: HashMap::new(),
+        }
+    }
+
+    pub fn trusting(rigs: Rigs, presses: Sender<Press>) -> Hosted {
+        Hosted {
+            token: Token::from_bytes([0; 32]),
+            trust: true,
             rigs,
             presses,
             gates: HashMap::new(),
@@ -21,7 +33,11 @@ impl Hosted {
     }
 
     pub fn joined(&mut self, session: SessionId) {
-        self.gates.insert(session, Gate::new(self.token, now_ms()));
+        let gate = match self.trust {
+            true => Gate::trusting(now_ms()),
+            false => Gate::new(self.token, now_ms()),
+        };
+        self.gates.insert(session, gate);
     }
 
     pub fn left(&mut self, session: SessionId) {
@@ -156,6 +172,39 @@ mod tests {
             protocol: warcry_link::PROTOCOL,
             client: "phone".into(),
         }
+    }
+
+    #[test]
+    fn a_trusting_host_lets_a_press_through_without_a_token() {
+        let (tx, presses) = unbounded();
+        let mut hosted = Hosted::trusting(Arc::new(|| vec![rig()]), tx);
+        hosted.joined(1);
+        assert!(hosted.authenticated(1));
+        assert!(matches!(
+            hosted.uplink(1, press(1)),
+            Some(Downlink::Pressed { ok: true, .. })
+        ));
+        assert!(presses.try_recv().is_ok());
+    }
+
+    #[test]
+    fn a_trusting_host_still_refuses_an_unoffered_slot() {
+        let (tx, presses) = unbounded();
+        let mut hosted = Hosted::trusting(Arc::new(|| vec![rig()]), tx);
+        hosted.joined(1);
+        let odd = Uplink::Press(Press {
+            rig: 1,
+            slot: 7,
+            seq: 1,
+            at_ms: 0,
+        });
+        assert!(matches!(
+            hosted.uplink(1, odd),
+            Some(Downlink::Denied {
+                reason: Denied::UnknownSlot
+            })
+        ));
+        assert!(presses.try_recv().is_err());
     }
 
     #[test]

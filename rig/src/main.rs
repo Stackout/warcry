@@ -92,6 +92,8 @@ enum Command {
         hub: Option<String>,
         #[arg(long, env = "WARCRY_HUB_SECRET")]
         hub_secret: Option<String>,
+        #[arg(long)]
+        trust_network: bool,
     },
 }
 
@@ -142,6 +144,7 @@ fn main() -> Result<()> {
             token_file,
             hub,
             hub_secret,
+            trust_network,
         } => listen(Listening {
             pids: pid,
             flavor: wow_root.join(flavor),
@@ -157,6 +160,7 @@ fn main() -> Result<()> {
             token_file,
             hub,
             hub_secret,
+            trust_network,
         }),
     }
 }
@@ -527,6 +531,7 @@ struct Listening {
     token_file: Option<PathBuf>,
     hub: Option<String>,
     hub_secret: Option<String>,
+    trust_network: bool,
 }
 
 fn remembered_token(path: Option<&std::path::Path>) -> Result<warcry_link::Token> {
@@ -597,6 +602,7 @@ fn listen(options: Listening) -> Result<()> {
         token_file,
         hub,
         hub_secret,
+        trust_network,
     } = options;
     let key = warcry::keys::Key::parse(&key)?;
     let pids = match pids.is_empty() {
@@ -662,22 +668,30 @@ fn listen(options: Listening) -> Result<()> {
                     port,
                     bind: bind.unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
                     token,
+                    trust: trust_network,
                 },
                 Arc::new(move || rigs.lock().expect("registry poisoned").clone()),
             )
         })
         .transpose()?;
     relay.as_ref().map(|relay| {
-        let url = advertise
-            .as_deref()
-            .map(|host| {
-                format!(
-                    "http://{host}:{}/?t={}",
-                    relay.address.port(),
-                    relay.token.to_hex()
-                )
-            })
-            .unwrap_or_else(|| relay.url());
+        trust_network.then(|| {
+            println!(
+                "WARNING --trust-network: anything that can reach port {} may press keys",
+                relay.address.port()
+            )
+        });
+        let host = advertise
+            .clone()
+            .unwrap_or_else(|| warcry_relay::lan_address().to_string());
+        let url = match trust_network {
+            true => format!("http://{host}:{}/", relay.address.port()),
+            false => format!(
+                "http://{host}:{}/?t={}",
+                relay.address.port(),
+                relay.token.to_hex()
+            ),
+        };
         pairing_qr(&url).map(|qr| println!("\nscan this with your iPhone camera:\n{qr}"));
         println!("or type it: {url}\n");
     });

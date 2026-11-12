@@ -22,6 +22,7 @@ pub struct Config {
     pub bind: IpAddr,
     pub port: u16,
     pub token: Token,
+    pub trust: bool,
 }
 
 impl Default for Config {
@@ -30,6 +31,7 @@ impl Default for Config {
             bind: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: DEFAULT_PORT,
             token: fresh_token(),
+            trust: false,
         }
     }
 }
@@ -76,9 +78,14 @@ impl Relay {
         let quit = Arc::new(AtomicBool::new(false));
         let fanout = Arc::new(Mutex::new(Fanout::default()));
         let (press_tx, presses) = unbounded();
+        let admit = session::Admit {
+            token: config.token,
+            trust: config.trust,
+            rigs,
+        };
         let thread = std::thread::Builder::new().name("relay".into()).spawn({
-            let (quit, fanout, token) = (quit.clone(), fanout.clone(), config.token);
-            move || accept(listener, quit, fanout, press_tx, rigs, token)
+            let (quit, fanout) = (quit.clone(), fanout.clone());
+            move || accept(listener, quit, fanout, press_tx, admit)
         })?;
         Ok(Relay {
             quit,
@@ -123,8 +130,7 @@ fn accept(
     quit: Arc<AtomicBool>,
     fanout: Arc<Mutex<Fanout>>,
     presses: Sender<Press>,
-    rigs: Rigs,
-    token: Token,
+    admit: session::Admit,
 ) {
     tracing::info!("companion relay listening on {:?}", listener.local_addr());
     while !quit.load(SeqCst) {
@@ -133,12 +139,10 @@ fn accept(
             Err(e) => tracing::warn!("relay accept failed: {e}"),
             Ok((stream, peer)) => {
                 let downlink = fanout.lock().expect("fanout poisoned").join();
-                let (presses, rigs, quit) = (presses.clone(), rigs.clone(), quit.clone());
+                let (presses, admit, quit) = (presses.clone(), admit.clone(), quit.clone());
                 let spawned = std::thread::Builder::new()
                     .name(format!("relay-{peer}"))
-                    .spawn(move || {
-                        session::serve(stream, peer, downlink, presses, rigs, token, quit)
-                    });
+                    .spawn(move || session::serve(stream, peer, downlink, presses, admit, quit));
                 spawned
                     .err()
                     .map(|e| tracing::warn!("cannot serve {peer}: {e}"));
