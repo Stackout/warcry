@@ -11,6 +11,11 @@
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
+html, body {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
@@ -54,6 +59,7 @@ main { display: grid; gap: 14px; grid-template-columns: 1fr; flex: 1; align-cont
 
 .reel {
   appearance: none;
+  touch-action: none;
   border: 2px solid var(--edge);
   background: #241338;
   color: var(--dim);
@@ -152,6 +158,21 @@ body.alarm .rig.bite .reel[data-label="reel"] {
 
 .ring { height: 4px; border-radius: 2px; background: var(--edge); overflow: hidden; }
 .ring span { display: block; height: 100%; background: var(--glow); width: 0; }
+
+.enable {
+  appearance: none;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 2px solid var(--glow);
+  border-radius: 14px;
+  background: #3a2000;
+  color: var(--glow);
+  font: 600 16px inherit;
+  touch-action: none;
+}
+
+.enable.hidden { display: none; }
 
 .empty { color: var(--dim); font-size: 14px; text-align: center; padding: 32px 0; }
 .empty.hidden, .rig .extra:empty { display: none; }

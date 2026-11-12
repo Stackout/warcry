@@ -23,7 +23,7 @@ const audio = () => {
   return state.chime
 }
 
-const wavUrl = (freqs) => {
+const wavBytes = (freqs) => {
   const rate = 44100
   const tone = 0.16
   const gap = 0.05
@@ -51,20 +51,35 @@ const wavUrl = (freqs) => {
   header.setUint16(34, 16, true)
   tag(36, 'data')
   header.setUint32(40, samples.byteLength, true)
-  return URL.createObjectURL(new Blob([header.buffer, samples.buffer], { type: 'audio/wav' }))
+  const bytes = new Uint8Array(44 + samples.byteLength)
+  bytes.set(new Uint8Array(header.buffer), 0)
+  bytes.set(new Uint8Array(samples.buffer), 44)
+  return bytes
+}
+
+const dataUrl = (bytes) => {
+  let text = ''
+  const step = 0x8000
+  for (let at = 0; at < bytes.length; at += step) {
+    text += String.fromCharCode.apply(null, bytes.subarray(at, at + step))
+  }
+  return `data:audio/wav;base64,${btoa(text)}`
 }
 
 const bell = () => {
   if (!state.bell) {
-    state.bell = new Audio(wavUrl([880, 1320, 1760]))
+    state.bell = new Audio(dataUrl(wavBytes([880, 1320, 1760, 1320])))
     state.bell.preload = 'auto'
+    state.bell.volume = 1
   }
   return state.bell
 }
 
 const sounded = (ok) => {
-  el('sound').textContent = ok ? 'sound on' : 'sound blocked'
+  el('sound').textContent = ok ? 'sound on' : 'test sound'
   el('sound').classList.toggle('on', ok)
+  el('enable').classList.toggle('hidden', ok)
+  state.sounding = ok
 }
 
 const ring = (urgency) => {
@@ -155,7 +170,10 @@ const tile = (rig) => {
     reel: slotFor(rig, 'reel'),
     mode: 'cast',
   }
-  button.addEventListener('click', () => press(rig.id))
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    press(rig.id)
+  })
   card.append(heading, state_line, ring, button)
   mode(made, 'cast')
   return made
@@ -297,10 +315,16 @@ const wake = async () => {
 el('wake').addEventListener('click', wake)
 const unlock = () => {
   audio().resume()
-  state.chime.state === 'running' && sounded(true)
+  state.sounding || ring(3)
 }
-document.addEventListener('click', unlock)
-document.addEventListener('touchstart', unlock)
-el('sound').addEventListener('click', () => ring(3))
+document.addEventListener('pointerdown', unlock)
+el('enable').addEventListener('pointerdown', (event) => {
+  event.preventDefault()
+  unlock()
+})
+el('sound').addEventListener('pointerdown', (event) => {
+  event.preventDefault()
+  ring(3)
+})
 setInterval(countdown, 200)
 connect()
