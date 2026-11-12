@@ -23,6 +23,57 @@ const audio = () => {
   return state.chime
 }
 
+const wavUrl = (freqs) => {
+  const rate = 44100
+  const tone = 0.16
+  const gap = 0.05
+  const span = Math.floor(rate * freqs.length * (tone + gap))
+  const samples = new Int16Array(span)
+  freqs.forEach((freq, index) => {
+    const start = Math.floor(rate * index * (tone + gap))
+    const len = Math.floor(rate * tone)
+    for (let n = 0; n < len; n += 1) {
+      const fade = Math.min(1, n / 300) * Math.min(1, (len - n) / 900)
+      samples[start + n] = Math.sin((2 * Math.PI * freq * n) / rate) * fade * 0.8 * 32767
+    }
+  })
+  const header = new DataView(new ArrayBuffer(44))
+  const tag = (at, text) => [...text].forEach((c, i) => header.setUint8(at + i, c.charCodeAt(0)))
+  tag(0, 'RIFF')
+  header.setUint32(4, 36 + samples.byteLength, true)
+  tag(8, 'WAVEfmt ')
+  header.setUint32(16, 16, true)
+  header.setUint16(20, 1, true)
+  header.setUint16(22, 1, true)
+  header.setUint32(24, rate, true)
+  header.setUint32(28, rate * 2, true)
+  header.setUint16(32, 2, true)
+  header.setUint16(34, 16, true)
+  tag(36, 'data')
+  header.setUint32(40, samples.byteLength, true)
+  return URL.createObjectURL(new Blob([header.buffer, samples.buffer], { type: 'audio/wav' }))
+}
+
+const bell = () => {
+  if (!state.bell) {
+    state.bell = new Audio(wavUrl([880, 1320, 1760]))
+    state.bell.preload = 'auto'
+  }
+  return state.bell
+}
+
+const sounded = (ok) => {
+  el('sound').textContent = ok ? 'sound on' : 'sound blocked'
+  el('sound').classList.toggle('on', ok)
+}
+
+const ring = (urgency) => {
+  const player = bell()
+  player.currentTime = 0
+  player.play().then(() => sounded(true)).catch(() => sounded(false))
+  chime(urgency)
+}
+
 const chime = (urgency) => {
   const context = audio()
   context.resume()
@@ -49,7 +100,7 @@ const alarm = () => {
   document.body.classList.toggle('alarm', on)
   if (on === !!state.alarm) return
   clearInterval(state.alarm)
-  state.alarm = on ? setInterval(() => chime(3), 1400) : null
+  state.alarm = on ? setInterval(() => ring(3), 1400) : null
 }
 
 const send = (message) => state.socket?.readyState === 1 && state.socket.send(JSON.stringify(message))
@@ -183,7 +234,7 @@ const countdown = () => {
 const alerted = (rig, alert) => {
   const name = kind(alert)
   const urgency = name === 'bite' ? 3 : name === 'bags_full' ? 2 : 1
-  name !== 'caught' && chime(urgency)
+  name !== 'caught' && ring(urgency)
   const made = state.rigs.get(rig)
   if (!made || name !== 'bite') return
   made.card.classList.add('bite')
@@ -244,8 +295,12 @@ const wake = async () => {
 }
 
 el('wake').addEventListener('click', wake)
-const unlock = () => audio().resume()
-document.addEventListener('click', unlock, { once: true })
-document.addEventListener('touchstart', unlock, { once: true })
+const unlock = () => {
+  audio().resume()
+  state.chime.state === 'running' && sounded(true)
+}
+document.addEventListener('click', unlock)
+document.addEventListener('touchstart', unlock)
+el('sound').addEventListener('click', () => ring(3))
 setInterval(countdown, 200)
 token ? connect() : setStatus(false, 'no pairing token; scan the QR from Warcry')
