@@ -127,6 +127,7 @@ struct Draft {
     hotkey: String,
     keys: String,
     window: String,
+    process: String,
     mode: String,
     always_active: bool,
 }
@@ -142,6 +143,11 @@ impl Draft {
                 .target
                 .as_ref()
                 .and_then(|t| t.title.clone())
+                .unwrap_or_default(),
+            process: command
+                .target
+                .as_ref()
+                .and_then(|t| t.process.clone())
                 .unwrap_or_default(),
             mode: command
                 .target
@@ -159,15 +165,21 @@ impl Draft {
         }
         Key::parse_combo(keys).map_err(fail)?;
         let some = |text: String| Some(text.trim().to_string()).filter(|t| !t.is_empty());
+        let (title, process) = (some(self.window), some(self.process));
         Ok(Command {
             name: some(self.name),
             phrase: some(self.phrase),
             hotkey: some(self.hotkey),
-            target: some(self.window).map(|title| Target {
-                title: Some(title),
-                mode: parse_mode(&self.mode),
-                ..Target::default()
-            }),
+            target: title
+                .is_some()
+                .then_some(())
+                .or(process.is_some().then_some(()))
+                .map(|()| Target {
+                    title,
+                    process,
+                    mode: parse_mode(&self.mode),
+                    ..Target::default()
+                }),
             always_active: self.always_active,
             actions: vec![press(keys)],
             ..Command::default()
@@ -200,10 +212,7 @@ fn simple(command: &Command) -> bool {
     keys_of(command).is_some()
         && !command.stop_others
         && !command.no_target
-        && command
-            .target
-            .as_ref()
-            .is_none_or(|t| t.process.is_none() && t.class.is_none())
+        && command.target.as_ref().is_none_or(|t| t.class.is_none())
 }
 
 fn mode_name(mode: TargetMode) -> String {
@@ -393,7 +402,7 @@ fn spawn_start(app: &AppHandle) {
 
 fn stop_engine(app: &AppHandle) {
     let previous = app.state::<App>().engine.lock().take();
-    drop(previous);
+    previous.map(|engine| tauri::async_runtime::spawn_blocking(move || drop(engine)));
     refresh_tray(app);
     app.emit("changed", ()).unwrap_or_default();
 }
@@ -663,19 +672,27 @@ fn remove_command(app: AppHandle, index: usize) -> Result<(), String> {
     })
 }
 
+#[derive(Serialize)]
+struct WindowChoice {
+    title: String,
+    process: String,
+}
+
 #[tauri::command]
-fn target_windows(state: State<App>) -> Vec<String> {
-    let mut titles: Vec<String> = state
+fn target_windows(state: State<App>) -> Vec<WindowChoice> {
+    let mut seen: Vec<(String, String)> = state
         .probe
         .lock()
         .windows
         .iter()
-        .map(|found| found.title.clone())
-        .filter(|title| !title.trim().is_empty())
+        .map(|found| (found.title.clone(), found.process.clone()))
+        .filter(|(title, process)| !title.trim().is_empty() || !process.trim().is_empty())
         .collect();
-    titles.sort();
-    titles.dedup();
-    titles
+    seen.sort();
+    seen.dedup();
+    seen.into_iter()
+        .map(|(title, process)| WindowChoice { title, process })
+        .collect()
 }
 
 fn spawn_probe(app: AppHandle) {

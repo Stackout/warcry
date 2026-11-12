@@ -54,6 +54,7 @@ const draftFields = {
   keys: 'd-keys',
   hotkey: 'd-hotkey',
   window: 'd-window',
+  process: 'd-process',
   mode: 'd-mode',
 }
 
@@ -66,9 +67,15 @@ const showEditor = (index, draft) => {
   $('editor').hidden = false
   $('add-command').hidden = true
   $('d-name').focus()
-  call('target_windows').then((titles) =>
-    $('window-list').replaceChildren(...(titles || []).map((t) => el('option', { value: t })))
-  )
+  call('target_windows').then((choices) => {
+    const unique = (values) => [...new Set(values.filter(Boolean))].sort()
+    $('window-list').replaceChildren(
+      ...unique((choices || []).map((c) => c.title)).map((t) => el('option', { value: t }))
+    )
+    $('process-list').replaceChildren(
+      ...unique((choices || []).map((c) => c.process)).map((p) => el('option', { value: p }))
+    )
+  })
 }
 
 const hideEditor = () => {
@@ -104,7 +111,7 @@ const removeCommand = (button, c) => {
 const commandRow = (c) => el('li', {},
   el('header', {}, el('h4', { textContent: c.name }), c.hotkey ? el('kbd', { textContent: c.hotkey }) : ''),
   el('div', { className: 'phrases' }, ...c.phrases.map((p) => el('span', { textContent: `“${p}”` })), c.more ? el('span', { textContent: `+${c.more} more` }) : ''),
-  el('div', { className: 'meta', textContent: `${c.actions} action${c.actions === 1 ? '' : 's'}${c.always_active ? ' · always active' : ''}${c.draft.window ? ` · ${c.draft.window}` : ''}` }),
+  el('div', { className: 'meta', textContent: `${c.actions} action${c.actions === 1 ? '' : 's'}${c.always_active ? ' · always active' : ''}${c.draft.window || c.draft.process ? ` · ${[c.draft.window, c.draft.process].filter(Boolean).join(' / ')}` : ''}` }),
   el('div', { className: 'editor-row' },
     c.editable
       ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
