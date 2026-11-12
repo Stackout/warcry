@@ -100,6 +100,26 @@
       </div>
 
       <div class="tab" id="tab-commands" hidden>
+        <div class="editor" id="editor" hidden>
+          <label>Name<input id="d-name" placeholder="heal pet" autocomplete="off"></label>
+          <label>Say<input id="d-phrase" placeholder="heal [my;] pet" autocomplete="off"></label>
+          <label>Press<input id="d-keys" placeholder="shift+3" autocomplete="off"></label>
+          <label>Hotkey<input id="d-hotkey" placeholder="optional, ctrl+alt+h" autocomplete="off"></label>
+          <label>Window<input id="d-window" list="window-list" placeholder="whatever is focused" autocomplete="off"></label>
+          <datalist id="window-list"></datalist>
+          <label>Send<select id="d-mode">
+            <option value="background">in the background, no focus steal</option>
+            <option value="focus_restore">focus it, then give focus back</option>
+            <option value="focus">focus it and leave it focused</option>
+          </select></label>
+          <label class="check"><input type="checkbox" id="d-active"> Works even while not listening</label>
+          <div class="editor-row">
+            <button id="d-save" class="primary">Save</button>
+            <button id="d-cancel">Cancel</button>
+            <span id="d-error" class="missing"></span>
+          </div>
+        </div>
+        <button id="add-command" class="primary">Add a command</button>
         <ul id="commands" class="commands"></ul>
       </div>
 

@@ -17,8 +17,9 @@ use tracing_subscriber::layer::{Context as LayerContext, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 use warcry::engine::{Engine, Note, Notify, Options};
+use warcry::keys::Key;
 use warcry::matcher::Matcher;
-use warcry::profile::Profile;
+use warcry::profile::{Action, Command, Profile, Target, TargetMode};
 use warcry::{audio, models, window};
 
 const TRAY_ON: &[u8] = include_bytes!("../icons/tray.png");
@@ -100,12 +101,119 @@ struct App {
 
 #[derive(Serialize)]
 struct CommandView {
+    index: usize,
     name: String,
     phrases: Vec<String>,
     more: usize,
     hotkey: Option<String>,
     actions: usize,
     always_active: bool,
+    draft: Draft,
+    editable: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+struct Draft {
+    name: String,
+    phrase: String,
+    hotkey: String,
+    keys: String,
+    window: String,
+    mode: String,
+    always_active: bool,
+}
+
+impl Draft {
+    fn of(command: &Command) -> Draft {
+        Draft {
+            name: command.name.clone().unwrap_or_default(),
+            phrase: command.phrase.clone().unwrap_or_default(),
+            hotkey: command.hotkey.clone().unwrap_or_default(),
+            keys: keys_of(command).unwrap_or_default(),
+            window: command
+                .target
+                .as_ref()
+                .and_then(|t| t.title.clone())
+                .unwrap_or_default(),
+            mode: command
+                .target
+                .as_ref()
+                .map(|t| mode_name(t.mode))
+                .unwrap_or_else(|| mode_name(TargetMode::default())),
+            always_active: command.always_active,
+        }
+    }
+
+    fn command(self) -> Result<Command, String> {
+        let keys = self.keys.trim();
+        if keys.is_empty() {
+            return Err("give the command a key to press".into());
+        }
+        Key::parse_combo(keys).map_err(fail)?;
+        let some = |text: String| Some(text.trim().to_string()).filter(|t| !t.is_empty());
+        Ok(Command {
+            name: some(self.name),
+            phrase: some(self.phrase),
+            hotkey: some(self.hotkey),
+            target: some(self.window).map(|title| Target {
+                title: Some(title),
+                mode: parse_mode(&self.mode),
+                ..Target::default()
+            }),
+            always_active: self.always_active,
+            actions: vec![press(keys)],
+            ..Command::default()
+        })
+    }
+}
+
+fn press(keys: &str) -> Action {
+    match keys.contains('+') {
+        true => Action::Combo {
+            keys: keys.to_string(),
+            hold_ms: 0,
+        },
+        false => Action::Press {
+            key: keys.to_string(),
+            hold_ms: 0,
+        },
+    }
+}
+
+fn keys_of(command: &Command) -> Option<String> {
+    match command.actions.as_slice() {
+        [Action::Press { key, .. }] => Some(key.clone()),
+        [Action::Combo { keys, .. }] => Some(keys.clone()),
+        _ => None,
+    }
+}
+
+fn simple(command: &Command) -> bool {
+    keys_of(command).is_some()
+        && !command.stop_others
+        && !command.no_target
+        && command
+            .target
+            .as_ref()
+            .is_none_or(|t| t.process.is_none() && t.class.is_none())
+}
+
+fn mode_name(mode: TargetMode) -> String {
+    match mode {
+        TargetMode::Background => "background",
+        TargetMode::Focus => "focus",
+        TargetMode::FocusRestore => "focus_restore",
+    }
+    .into()
+}
+
+fn parse_mode(name: &str) -> TargetMode {
+    match name {
+        "background" => TargetMode::Background,
+        "focus" => TargetMode::Focus,
+        _ => TargetMode::FocusRestore,
+    }
 }
 
 #[derive(Serialize)]
@@ -150,12 +258,15 @@ fn command_views(profile: &Profile) -> Vec<CommandView> {
         .map(|(i, c)| {
             let phrases = matcher.phrases_for(i);
             CommandView {
+                index: i,
                 name: c.display_name(),
                 more: phrases.len().saturating_sub(4),
                 phrases: phrases.into_iter().take(4).map(String::from).collect(),
                 hotkey: c.hotkey.clone(),
                 actions: c.actions.len(),
                 always_active: c.always_active,
+                draft: Draft::of(c),
+                editable: simple(c),
             }
         })
         .collect()
@@ -490,6 +601,68 @@ async fn download_model(app: AppHandle, name: String) -> Result<(), String> {
     result.map_err(fail)
 }
 
+fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.state::<App>()
+        .config
+        .lock()
+        .profile()
+        .ok_or_else(|| "no profile selected yet".to_string())
+}
+
+fn with_profile(
+    app: &AppHandle,
+    change: impl FnOnce(&mut Profile) -> Result<(), String>,
+) -> Result<(), String> {
+    let path = profile_path(app)?;
+    let mut profile = Profile::load(&path).map_err(fail)?;
+    change(&mut profile)?;
+    profile.save(&path).map_err(fail)?;
+    drop(app.emit("changed", ()));
+    Ok(())
+}
+
+#[tauri::command]
+fn edit_command(app: AppHandle, index: Option<usize>, draft: Draft) -> Result<(), String> {
+    let command = draft.command()?;
+    with_profile(&app, move |profile| match index {
+        None => {
+            profile.commands.push(command);
+            Ok(())
+        }
+        Some(at) => match profile.commands.get_mut(at) {
+            None => Err(format!("there is no command {at} to edit")),
+            Some(slot) => {
+                *slot = command;
+                Ok(())
+            }
+        },
+    })
+}
+
+#[tauri::command]
+fn remove_command(app: AppHandle, index: usize) -> Result<(), String> {
+    with_profile(&app, move |profile| match index < profile.commands.len() {
+        false => Err(format!("there is no command {index} to remove")),
+        true => {
+            profile.commands.remove(index);
+            Ok(())
+        }
+    })
+}
+
+#[tauri::command]
+fn target_windows() -> Vec<String> {
+    let mut titles: Vec<String> = window::list()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|found| found.title)
+        .filter(|title| !title.trim().is_empty())
+        .collect();
+    titles.sort();
+    titles.dedup();
+    titles
+}
+
 #[tauri::command]
 fn try_phrase(state: State<App>, text: String) -> Result<String, String> {
     let path = state
@@ -594,7 +767,10 @@ fn main() {
             open_profile,
             open_folder,
             download_model,
-            try_phrase
+            try_phrase,
+            edit_command,
+            remove_command,
+            target_windows
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Warcry");

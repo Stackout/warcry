@@ -229,3 +229,47 @@ select:focus, .try input:focus { border-color: rgba(255, 122, 26, 0.6); }
 ::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 10px; border: 2px solid var(--bg); }
 
 [hidden] { display: none !important; }
+
+.editor {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid #2d1a4a;
+  border-radius: 12px;
+  background: #190d2b;
+}
+
+.editor label {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.editor label.check {
+  grid-template-columns: auto 1fr;
+  justify-content: start;
+}
+
+.editor input,
+.editor select {
+  padding: 8px 10px;
+  border: 1px solid #2d1a4a;
+  border-radius: 8px;
+  background: #0d0618;
+  color: inherit;
+  font: inherit;
+}
+
+.editor label.check input { width: auto; }
+
+.editor-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.commands .editor-row { margin-top: 8px; }

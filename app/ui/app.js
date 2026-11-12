@@ -46,13 +46,68 @@ const renderTarget = (target) => {
   box.replaceChildren(el('b', { textContent: target.description }), el('br'), found)
 }
 
+let editing = null
+
+const draftFields = {
+  name: 'd-name',
+  phrase: 'd-phrase',
+  keys: 'd-keys',
+  hotkey: 'd-hotkey',
+  window: 'd-window',
+  mode: 'd-mode',
+}
+
+const showEditor = (index, draft) => {
+  editing = index
+  Object.entries(draftFields).forEach(([key, id]) => ($(id).value = draft[key] || ''))
+  $('d-mode').value = draft.mode || 'background'
+  $('d-active').checked = !!draft.always_active
+  $('d-error').textContent = ''
+  $('editor').hidden = false
+  $('add-command').hidden = true
+  $('d-name').focus()
+  call('target_windows').then((titles) =>
+    $('window-list').replaceChildren(...(titles || []).map((t) => el('option', { value: t })))
+  )
+}
+
+const hideEditor = () => {
+  editing = null
+  $('editor').hidden = true
+  $('add-command').hidden = false
+}
+
+const saveDraft = () => {
+  const draft = Object.fromEntries(
+    Object.entries(draftFields).map(([key, id]) => [key, $(id).value.trim()])
+  )
+  draft.always_active = $('d-active').checked
+  invoke('edit_command', { index: editing, draft })
+    .then(hideEditor)
+    .then(refresh)
+    .catch((error) => ($('d-error').textContent = String(error)))
+}
+
+const removeCommand = (c) => {
+  if (!confirm(`Delete “${c.name}”?`)) return
+  call('remove_command', { index: c.index }).then(refresh)
+}
+
+const commandRow = (c) => el('li', {},
+  el('header', {}, el('h4', { textContent: c.name }), c.hotkey ? el('kbd', { textContent: c.hotkey }) : ''),
+  el('div', { className: 'phrases' }, ...c.phrases.map((p) => el('span', { textContent: `“${p}”` })), c.more ? el('span', { textContent: `+${c.more} more` }) : ''),
+  el('div', { className: 'meta', textContent: `${c.actions} action${c.actions === 1 ? '' : 's'}${c.always_active ? ' · always active' : ''}${c.draft.window ? ` · ${c.draft.window}` : ''}` }),
+  el('div', { className: 'editor-row' },
+    c.editable
+      ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
+      : el('span', { className: 'meta', textContent: 'too detailed to edit here, use Edit profile' }),
+    el('button', { textContent: 'Delete', onclick: () => removeCommand(c) }),
+  ),
+)
+
 const renderCommands = (commands) => {
   $('command-count').textContent = commands.length || ''
-  $('commands').replaceChildren(...commands.map((c) => el('li', {},
-    el('header', {}, el('h4', { textContent: c.name }), c.hotkey ? el('kbd', { textContent: c.hotkey }) : ''),
-    el('div', { className: 'phrases' }, ...c.phrases.map((p) => el('span', { textContent: `“${p}”` })), c.more ? el('span', { textContent: `+${c.more} more` }) : ''),
-    el('div', { className: 'meta', textContent: `${c.actions} action${c.actions === 1 ? '' : 's'}${c.always_active ? ' · always active' : ''}` }),
-  )))
+  $('commands').replaceChildren(...commands.map(commandRow))
 }
 
 const render = (s) => {
@@ -150,6 +205,9 @@ $('model').addEventListener('change', (e) => saveConfig({ model: e.target.value 
 $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.target.checked }))
 $('download').addEventListener('click', () => call('download_model', { name: state.model }).finally(refresh))
 $('edit').addEventListener('click', () => call('open_profile'))
+$('add-command').addEventListener('click', () => showEditor(null, { mode: 'background' }))
+$('d-save').addEventListener('click', saveDraft)
+$('d-cancel').addEventListener('click', hideEditor)
 $('folder').addEventListener('click', () => call('open_folder'))
 const create = (example) => call('create_profile', { example }).then(refresh)
 $('new-fishing').addEventListener('click', () => create('fishing'))

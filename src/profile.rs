@@ -248,6 +248,12 @@ impl Profile {
             .with_context(|| format!("in profile {}", path.display()))
     }
 
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let text = toml::to_string_pretty(self).context("writing profile")?;
+        Profile::parse(&text).context("the edited profile would not load back")?;
+        std::fs::write(path, text).with_context(|| format!("saving {}", path.display()))
+    }
+
     pub fn find_command(&self, name: &str) -> Option<usize> {
         let wanted = name.trim().to_lowercase();
         let by_name = |c: &Command| c.name.as_ref().is_some_and(|n| n.to_lowercase() == wanted);
@@ -347,6 +353,57 @@ fn check_hotkey(s: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_profile_loads_back_with_its_commands() {
+        let path = std::env::temp_dir().join(format!("warcry-save-{}.toml", std::process::id()));
+        let mut profile = Profile {
+            name: "Pets".into(),
+            ..Profile::default()
+        };
+        profile.commands.push(Command {
+            name: Some("heal pet".into()),
+            phrase: Some("heal [my;] pet".into()),
+            target: Some(Target {
+                title: Some("World of Warcraft".into()),
+                ..Target::default()
+            }),
+            actions: vec![Action::Combo {
+                keys: "shift+3".into(),
+                hold_ms: 0,
+            }],
+            ..Command::default()
+        });
+        profile.save(&path).unwrap();
+        let back = Profile::load(&path).unwrap();
+        assert_eq!(back.commands.len(), 1);
+        assert_eq!(back.commands[0].name.as_deref(), Some("heal pet"));
+        assert_eq!(
+            back.commands[0].actions,
+            vec![Action::Combo {
+                keys: "shift+3".into(),
+                hold_ms: 0
+            }]
+        );
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_profile_that_would_not_load_is_never_written() {
+        let path = std::env::temp_dir().join(format!("warcry-bad-{}.toml", std::process::id()));
+        let mut profile = Profile::default();
+        profile.commands.push(Command {
+            name: Some("broken".into()),
+            phrase: Some("do it".into()),
+            actions: vec![Action::Press {
+                key: "nonsense-key".into(),
+                hold_ms: 0,
+            }],
+            ..Command::default()
+        });
+        assert!(profile.save(&path).is_err());
+        assert!(!path.exists(), "a rejected profile was written anyway");
+    }
 
     #[test]
     fn bundled_profiles_parse() {
