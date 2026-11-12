@@ -91,9 +91,16 @@ struct Tray {
     toggle: MenuItem<Wry>,
 }
 
+#[derive(Default)]
+struct Probe {
+    windows: Vec<warcry::window::WindowInfo>,
+    devices: Vec<String>,
+}
+
 struct App {
     engine: Mutex<Option<Engine>>,
     config: Mutex<Config>,
+    probe: Mutex<Probe>,
     busy: AtomicBool,
     tray: Mutex<Option<Tray>>,
     failure: Mutex<Option<String>>,
@@ -299,10 +306,16 @@ fn snapshot(state: State<App>) -> Snapshot {
         target: profile.and_then(|p| p.target.as_ref()).map(|t| TargetView {
             description: t.describe(),
             mode: format!("{:?}", t.mode),
-            found: window::find(t).ok().map(|w| w.title),
+            found: state
+                .probe
+                .lock()
+                .windows
+                .iter()
+                .find(|w| window::matches(w, t))
+                .map(|w| w.title.clone()),
         }),
         push_to_talk: profile.and_then(|p| p.settings.push_to_talk.clone()),
-        devices: audio::devices().unwrap_or_default(),
+        devices: state.probe.lock().devices.clone(),
         models: models::KNOWN
             .iter()
             .map(|(name, about)| ModelView {
@@ -651,16 +664,34 @@ fn remove_command(app: AppHandle, index: usize) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn target_windows() -> Vec<String> {
-    let mut titles: Vec<String> = window::list()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|found| found.title)
+fn target_windows(state: State<App>) -> Vec<String> {
+    let mut titles: Vec<String> = state
+        .probe
+        .lock()
+        .windows
+        .iter()
+        .map(|found| found.title.clone())
         .filter(|title| !title.trim().is_empty())
         .collect();
     titles.sort();
     titles.dedup();
     titles
+}
+
+fn spawn_probe(app: AppHandle) {
+    let spawned = std::thread::Builder::new()
+        .name("probe".into())
+        .spawn(move || {
+            loop {
+                let windows = window::list().unwrap_or_default();
+                let devices = audio::devices().unwrap_or_default();
+                *app.state::<App>().probe.lock() = Probe { windows, devices };
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+        });
+    spawned
+        .err()
+        .map(|e| tracing::warn!("cannot probe windows and microphones: {e}"));
 }
 
 #[tauri::command]
@@ -738,6 +769,7 @@ fn main() {
         .manage(App {
             engine: Mutex::new(None),
             config: Mutex::new(Config::load()),
+            probe: Mutex::new(Probe::default()),
             busy: AtomicBool::new(false),
             tray: Mutex::new(None),
             failure: Mutex::new(None),
@@ -745,6 +777,7 @@ fn main() {
         .setup(|app| {
             init_logging(app.handle().clone());
             build_tray(app.handle())?;
+            spawn_probe(app.handle().clone());
             let config = app.state::<App>().config.lock().clone();
             if config.auto_start && config.profile().is_some() {
                 spawn_start(app.handle());

@@ -88,8 +88,16 @@ const saveDraft = () => {
     .catch((error) => ($('d-error').textContent = String(error)))
 }
 
-const removeCommand = (c) => {
-  if (!confirm(`Delete “${c.name}”?`)) return
+const removeCommand = (button, c) => {
+  if (button.dataset.sure !== 'yes') {
+    button.dataset.sure = 'yes'
+    button.textContent = 'Really delete?'
+    setTimeout(() => {
+      button.dataset.sure = ''
+      button.textContent = 'Delete'
+    }, 4000)
+    return
+  }
   call('remove_command', { index: c.index }).then(refresh)
 }
 
@@ -101,7 +109,10 @@ const commandRow = (c) => el('li', {},
     c.editable
       ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
       : el('span', { className: 'meta', textContent: 'too detailed to edit here, use Edit profile' }),
-    el('button', { textContent: 'Delete', onclick: () => removeCommand(c) }),
+    el('button', {
+      textContent: 'Delete',
+      onclick: (event) => removeCommand(event.currentTarget, c),
+    }),
   ),
 )
 
