@@ -31,7 +31,7 @@ impl Recorder {
 
     pub fn observe(&mut self, pid: u32, tick: &Tick) {
         tick.events.iter().for_each(|event| self.mark(event));
-        self.cast.as_mut().map(|cast| {
+        self.cast.iter_mut().for_each(|cast| {
             tick.frames.iter().for_each(|frame| {
                 cast.samples.extend_from_slice(frame);
                 cast.levels.push(rms(frame));
@@ -62,9 +62,7 @@ impl Recorder {
             .join(format!("cast-{pid}-{}-{:03}.wav", self.run, self.casts));
         let written = write_wav(&path, &cast.samples);
         println!("  recorded {} {}", path.display(), summary(&cast.levels));
-        written
-            .err()
-            .map(|e| println!("  could not write {}: {e}", path.display()));
+        drop(written.inspect_err(|e| println!("  could not write {}: {e}", path.display())));
     }
 }
 
@@ -105,6 +103,24 @@ pub fn write_wav(path: &Path, samples: &[f32]) -> std::io::Result<()> {
     std::fs::write(path, out)
 }
 
+pub fn read_wav(path: &Path) -> std::io::Result<Vec<f32>> {
+    let bytes = std::fs::read(path)?;
+    let start = find_data(&bytes).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "no data chunk in wav")
+    })?;
+    Ok(bytes[start..]
+        .chunks_exact(2)
+        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]) as f32 / 32_768.0)
+        .collect())
+}
+
+fn find_data(bytes: &[u8]) -> Option<usize> {
+    (12..bytes.len().saturating_sub(8))
+        .step_by(2)
+        .find(|at| &bytes[*at..at + 4] == b"data")
+        .map(|at| at + 8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,22 +156,4 @@ mod tests {
         let text = summary(&levels);
         assert!(text.contains("ratio 50.0x"), "{text}");
     }
-}
-
-pub fn read_wav(path: &Path) -> std::io::Result<Vec<f32>> {
-    let bytes = std::fs::read(path)?;
-    let start = find_data(&bytes).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "no data chunk in wav")
-    })?;
-    Ok(bytes[start..]
-        .chunks_exact(2)
-        .map(|pair| i16::from_le_bytes([pair[0], pair[1]]) as f32 / 32_768.0)
-        .collect())
-}
-
-fn find_data(bytes: &[u8]) -> Option<usize> {
-    (12..bytes.len().saturating_sub(8))
-        .step_by(2)
-        .find(|at| &bytes[*at..at + 4] == b"data")
-        .map(|at| at + 8)
 }

@@ -49,7 +49,7 @@ fn main() -> Result<()> {
             let spawned = std::thread::Builder::new()
                 .name("hub-client".into())
                 .spawn(move || serve(stream, switch, secret));
-            spawned.err().map(|e| tracing::warn!("cannot serve: {e}"));
+            drop(spawned.inspect_err(|e| tracing::warn!("cannot serve: {e}")));
         });
     Ok(())
 }
@@ -57,9 +57,7 @@ fn main() -> Result<()> {
 fn serve(stream: TcpStream, switch: Arc<Mutex<Switch>>, secret: Token) {
     let peer = stream.peer_addr().ok();
     let served = dispatch(stream, switch, secret);
-    served
-        .err()
-        .map(|e| tracing::debug!("session with {peer:?} ended: {e:#}"));
+    drop(served.inspect_err(|e| tracing::debug!("session with {peer:?} ended: {e:#}")));
 }
 
 fn dispatch(stream: TcpStream, switch: Arc<Mutex<Switch>>, secret: Token) -> Result<()> {
@@ -85,7 +83,7 @@ fn request_target(head: &str) -> String {
 
 fn page(mut stream: TcpStream, path: &str) -> Result<()> {
     let mut head = [0u8; PEEK];
-    stream.read(&mut head)?;
+    let _read = stream.read(&mut head)?;
     stream.write_all(&warcry_relay::assets::serve(path))?;
     stream.flush()?;
     Ok(())
@@ -135,7 +133,7 @@ fn pump_host(
             Err(e) => return Err(e.into()),
             Ok(Message::Text(text)) => {
                 serde_json::from_str::<FromHost>(&text)
-                    .map(|frame| switch.lock().expect("switch poisoned").from_host(frame))
+                    .map(|frame| switch.lock().expect("switch poisoned").on_host(frame))
                     .ok();
             }
             Ok(Message::Close(_)) => bail!("desktop closed"),
@@ -149,11 +147,23 @@ fn phone(stream: TcpStream, switch: Arc<Mutex<Switch>>) -> Result<()> {
     stream.set_read_timeout(Some(READ_POLL))?;
     let mut socket = tungstenite::accept(stream)?;
     let (session, inbound) = switch.lock().expect("switch poisoned").join();
-    tracing::info!("phone {session} connected");
+    report(&switch, session, "connected");
     let pumped = pump_phone(&mut socket, &switch, session, &inbound);
     switch.lock().expect("switch poisoned").leave(session);
-    tracing::info!("phone {session} disconnected");
+    report(&switch, session, "disconnected");
     pumped
+}
+
+fn report(switch: &Arc<Mutex<Switch>>, session: SessionId, what: &str) {
+    let switch = switch.lock().expect("switch poisoned");
+    tracing::info!(
+        "phone {session} {what}: {} on the hub, desktop {}",
+        switch.phones(),
+        match switch.has_host() {
+            true => "attached",
+            false => "away",
+        }
+    );
 }
 
 fn pump_phone(
@@ -171,11 +181,10 @@ fn pump_phone(
                     switch
                         .lock()
                         .expect("switch poisoned")
-                        .from_phone(session, message)
+                        .on_phone(session, message)
                 });
-                match forwarded {
-                    Ok(false) => say(socket, &offline())?,
-                    _ => (),
+                if let Ok(false) = forwarded {
+                    say(socket, &offline())?
                 }
             }
             Ok(Message::Close(_)) => bail!("phone closed"),

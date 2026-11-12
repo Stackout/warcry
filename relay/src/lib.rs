@@ -63,6 +63,7 @@ impl Fanout {
 pub struct Relay {
     quit: Arc<AtomicBool>,
     fanout: Arc<Mutex<Fanout>>,
+    presser: Sender<Press>,
     presses: Receiver<Press>,
     thread: Option<JoinHandle<()>>,
     pub address: SocketAddr,
@@ -84,12 +85,13 @@ impl Relay {
             rigs,
         };
         let thread = std::thread::Builder::new().name("relay".into()).spawn({
-            let (quit, fanout) = (quit.clone(), fanout.clone());
+            let (quit, fanout, press_tx) = (quit.clone(), fanout.clone(), press_tx.clone());
             move || accept(listener, quit, fanout, press_tx, admit)
         })?;
         Ok(Relay {
             quit,
             fanout,
+            presser: press_tx,
             presses,
             thread: Some(thread),
             address,
@@ -106,6 +108,10 @@ impl Relay {
 
     pub fn presses(&self) -> &Receiver<Press> {
         &self.presses
+    }
+
+    pub fn presser(&self) -> Sender<Press> {
+        self.presser.clone()
     }
 
     pub fn url(&self) -> String {

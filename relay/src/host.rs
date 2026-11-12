@@ -134,11 +134,12 @@ mod tests {
     use super::*;
     use crossbeam_channel::unbounded;
     use std::sync::Arc;
-    use warcry_link::{ActionSlot, RigInfo, Snr};
+    use warcry_link::{ActionSlot, RigInfo, RigKind, Snr};
 
     fn rig() -> RigInfo {
         RigInfo {
             id: 1,
+            kind: RigKind::Window,
             label: "Thrallfisher".into(),
             pid: 10,
             actions: vec![ActionSlot {

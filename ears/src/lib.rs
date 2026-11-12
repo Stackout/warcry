@@ -58,7 +58,7 @@ mod tests {
     fn framer_emits_whole_frames_and_keeps_the_remainder() {
         let mut framer = Framer::new();
         assert_eq!(framer.push(&vec![0.0; FRAME - 1]).len(), 0);
-        assert_eq!(framer.push(&vec![0.0; 2]).len(), 1);
+        assert_eq!(framer.push(&[0.0; 2]).len(), 1);
         assert_eq!(framer.push(&vec![0.0; FRAME * 3]).len(), 3);
         assert_eq!(framer.push(&vec![0.0; FRAME - 1]).len(), 1);
     }

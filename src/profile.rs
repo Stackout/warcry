@@ -118,6 +118,8 @@ pub struct Command {
     #[serde(default)]
     pub always_active: bool,
     #[serde(default)]
+    pub pad: bool,
+    #[serde(default)]
     pub stop_others: bool,
     #[serde(default)]
     pub actions: Vec<Action>,

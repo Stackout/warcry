@@ -13,6 +13,14 @@ pub enum Snr {
     Unknown,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RigKind {
+    #[default]
+    Window,
+    Deck,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActionSlot {
     pub slot: Slot,
@@ -22,6 +30,7 @@ pub struct ActionSlot {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RigInfo {
     pub id: RigId,
+    pub kind: RigKind,
     pub label: String,
     pub pid: u32,
     pub actions: Vec<ActionSlot>,

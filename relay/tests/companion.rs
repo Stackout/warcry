@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tungstenite::{Message, WebSocket, stream::MaybeTlsStream};
 use warcry_link::{
-    ActionSlot, Alert, Denied, Downlink, Press, RigInfo, RigState, Snr, Token, Uplink, now_ms,
+    ActionSlot, Alert, Denied, Downlink, Press, RigInfo, RigKind, RigState, Snr, Token, Uplink,
+    now_ms,
 };
 use warcry_relay::{Config, Relay};
 
@@ -13,6 +14,7 @@ type Client = WebSocket<MaybeTlsStream<TcpStream>>;
 fn rig() -> RigInfo {
     RigInfo {
         id: 7,
+        kind: RigKind::Window,
         label: "Thrallfisher".into(),
         pid: 4821,
         actions: vec![ActionSlot {

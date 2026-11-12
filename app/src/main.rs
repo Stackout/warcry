@@ -761,9 +761,7 @@ fn spawn_probe(app: AppHandle) {
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
         });
-    spawned
-        .err()
-        .map(|e| tracing::warn!("cannot probe windows and microphones: {e}"));
+    drop(spawned.inspect_err(|e| tracing::warn!("cannot probe windows and microphones: {e}")));
 }
 
 #[tauri::command]

@@ -46,20 +46,20 @@ impl Switch {
         let session = self.next;
         let (tx, rx) = unbounded();
         self.phones.insert(session, tx);
-        self.to_host(ToHost::Joined { session });
+        self.tell_host(ToHost::Joined { session });
         (session, rx)
     }
 
     pub fn leave(&mut self, session: SessionId) {
         self.phones.remove(&session);
-        self.to_host(ToHost::Left { session });
+        self.tell_host(ToHost::Left { session });
     }
 
-    pub fn from_phone(&mut self, session: SessionId, message: Uplink) -> bool {
-        self.to_host(ToHost::Uplink { session, message })
+    pub fn on_phone(&mut self, session: SessionId, message: Uplink) -> bool {
+        self.tell_host(ToHost::Uplink { session, message })
     }
 
-    pub fn from_host(&mut self, frame: FromHost) {
+    pub fn on_host(&mut self, frame: FromHost) {
         let wanted: Vec<SessionId> = self
             .phones
             .keys()
@@ -77,10 +77,10 @@ impl Switch {
     }
 
     fn tell_everyone(&mut self, message: Downlink) {
-        self.from_host(FromHost::everyone(message));
+        self.on_host(FromHost::everyone(message));
     }
 
-    fn to_host(&mut self, frame: ToHost) -> bool {
+    fn tell_host(&mut self, frame: ToHost) -> bool {
         let delivered = self
             .host
             .as_ref()
@@ -107,7 +107,7 @@ mod tests {
         let mut switch = Switch::new();
         let (session, phone) = switch.join();
         assert!(!switch.has_host());
-        assert!(!switch.from_phone(session, warcry_link::Uplink::Ping { nonce: 1 }));
+        assert!(!switch.on_phone(session, warcry_link::Uplink::Ping { nonce: 1 }));
         assert!(phone.try_recv().is_err());
     }
 
@@ -117,7 +117,7 @@ mod tests {
         switch.host_arrived();
         let (_, one) = switch.join();
         let (_, two) = switch.join();
-        switch.from_host(FromHost::everyone(alert()));
+        switch.on_host(FromHost::everyone(alert()));
         assert_eq!(one.try_recv(), Ok(alert()));
         assert_eq!(two.try_recv(), Ok(alert()));
     }
@@ -128,7 +128,7 @@ mod tests {
         switch.host_arrived();
         let (first, one) = switch.join();
         let (_, two) = switch.join();
-        switch.from_host(FromHost::just(first, alert()));
+        switch.on_host(FromHost::just(first, alert()));
         assert_eq!(one.try_recv(), Ok(alert()));
         assert!(two.try_recv().is_err());
     }
@@ -176,7 +176,7 @@ mod tests {
             seq: 5,
             at_ms: 0,
         });
-        assert!(switch.from_phone(session, press.clone()));
+        assert!(switch.on_phone(session, press.clone()));
         assert_eq!(
             host.try_recv(),
             Ok(ToHost::Uplink {
@@ -203,7 +203,7 @@ mod tests {
         drop(host);
         let (session, _phone) = switch.join();
         assert!(!switch.has_host());
-        assert!(!switch.from_phone(session, warcry_link::Uplink::Ping { nonce: 1 }));
+        assert!(!switch.on_phone(session, warcry_link::Uplink::Ping { nonce: 1 }));
     }
 
     #[test]
@@ -213,7 +213,7 @@ mod tests {
         let (_, one) = switch.join();
         drop(switch.join().1);
         assert_eq!(switch.phones(), 2);
-        switch.from_host(FromHost::everyone(alert()));
+        switch.on_host(FromHost::everyone(alert()));
         assert_eq!(switch.phones(), 1);
         assert_eq!(one.try_recv(), Ok(alert()));
     }

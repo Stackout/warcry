@@ -2,11 +2,9 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use warcry_ears::detect::{Observation, Outcome};
-use warcry_ears::tone::Beacon;
-use warcry_link::{ActionSlot, Alert, Attention, Downlink, RigId, RigInfo, RigState, Snr, now_ms};
-use warcry_relay::{Config, Relay};
-use warcry_rig::{Event, attach, find, names::Names};
+use warcry_ears::detect::Observation;
+use warcry_rig::companion::{self, Hub, Settings};
+use warcry_rig::{Event, find, names::Names};
 
 #[derive(Parser)]
 #[command(
@@ -19,6 +17,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Command {
     Windows,
     Analyze {
@@ -251,11 +250,12 @@ fn replay(wavs: Vec<PathBuf>, sounds: PathBuf, bite: String) -> Result<()> {
     bests.sort_by(|a, b| a.total_cmp(b));
     bests
         .first()
-        .map(|worst| println!("  worst cast scored {worst:.3}"));
-    bests.get(bests.len() / 10).map(|tenth| {
+        .iter()
+        .for_each(|worst| println!("  worst cast scored {worst:.3}"));
+    bests.get(bests.len() / 10).iter().for_each(|tenth| {
         println!(
             "  a threshold of {:.3} would catch 90% of them",
-            tenth - 0.01
+            *tenth - 0.01
         )
     });
     Ok(())
@@ -386,7 +386,10 @@ fn pick(samples: &[f32], from: f32, to: f32, frames: usize) -> Option<(usize, Ve
     beacons(samples).iter().for_each(|at| {
         let low = at.saturating_sub(BEACON_MASK);
         let high = (at + BEACON_MASK).min(rising.len());
-        rising.get_mut(low..high).map(|span| span.fill(0.0));
+        rising
+            .get_mut(low..high)
+            .into_iter()
+            .for_each(|span| span.fill(0.0));
     });
     let total = spectra.len();
     let start = total.checked_sub((from / 0.02) as usize)?;
@@ -616,121 +619,20 @@ fn listen(options: Listening) -> Result<()> {
         bail!("no World of Warcraft windows found; start the game or pass --pid");
     }
 
-    let names = Names::scan(&flavor);
     println!(
         "{} characters known from {}",
-        names.known(),
+        Names::scan(&flavor).known(),
         flavor.display()
     );
 
     let library = load_sounds(sounds.as_deref())?;
-    match library.is_empty() {
-        true => println!("no sound library loaded; bites will not be detected"),
-        false => library.iter().for_each(|sound| {
-            println!(
-                "sound \"{}\": {} examples, threshold {:.3}{}",
-                sound.name,
-                sound.examples(),
-                sound.threshold,
-                match sound.name == bite {
-                    true => "  <- reported as a bite",
-                    false => "",
-                }
-            )
-        }),
-    }
-
-    let registry = Arc::new(Mutex::new(roster(&pids)));
-    let (events_tx, events) = crossbeam_channel::unbounded();
-    let taps: Vec<_> = pids
-        .iter()
-        .map(|pid| {
-            let recorder = record
-                .as_deref()
-                .map(warcry_rig::record::Recorder::new)
-                .transpose()?;
-            attach(*pid, events_tx.clone(), library.clone(), &bite, recorder)
-        })
-        .collect::<Result<_>>()?;
-    record
-        .as_deref()
-        .map(|dir| println!("recording armed casts to {}", dir.display()));
-    taps.iter()
-        .zip(&pids)
-        .for_each(|(tap, pid)| println!("attached pid {pid} at {} Hz", tap.rate));
+    describe_library(&library, &bite);
 
     let token = remembered_token(token_file.as_deref())?;
-    let relay = serve
-        .then(|| {
-            let rigs = registry.clone();
-            Relay::start(
-                Config {
-                    port,
-                    bind: bind.unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
-                    token,
-                    trust: trust_network,
-                },
-                Arc::new(move || rigs.lock().expect("registry poisoned").clone()),
-            )
-        })
-        .transpose()?;
-    relay.as_ref().map(|relay| {
-        trust_network.then(|| {
-            println!(
-                "WARNING --trust-network: anything that can reach port {} may press keys",
-                relay.address.port()
-            )
-        });
-        let host = advertise
-            .clone()
-            .unwrap_or_else(|| warcry_relay::lan_address().to_string());
-        let url = match trust_network {
-            true => format!("http://{host}:{}/", relay.address.port()),
-            false => format!(
-                "http://{host}:{}/?t={}",
-                relay.address.port(),
-                relay.token.to_hex()
-            ),
-        };
-        pairing_qr(&url).map(|qr| println!("\nscan this with your iPhone camera:\n{qr}"));
-        println!("or type it: {url}\n");
-    });
-
-    let (press_tx, press_rx) = crossbeam_channel::unbounded();
-    relay.as_ref().map(|relay| {
-        let (from_relay, into_shared) = (relay.presses().clone(), press_tx.clone());
-        std::thread::Builder::new()
-            .name("relay-presses".into())
-            .spawn(move || {
-                from_relay
-                    .iter()
-                    .try_for_each(|press| into_shared.send(press))
-                    .ok();
-            })
-    });
-
-    let published = hub
-        .map(|url| {
-            let secret = hub_secret
-                .as_deref()
-                .map(str::trim)
-                .map(warcry_link::Token::from_hex)
-                .transpose()
-                .map_err(|_| anyhow::anyhow!("--hub-secret must be 64 hex characters"))?
-                .ok_or_else(|| anyhow::anyhow!("--hub needs --hub-secret"))?;
-            let rigs = registry.clone();
-            println!("publishing to {url}");
-            Ok::<_, anyhow::Error>(warcry_rig::hub::publish(
-                url,
-                secret,
-                token,
-                Arc::new(move || rigs.lock().expect("registry poisoned").clone()),
-                press_tx.clone(),
-            ))
-        })
-        .transpose()?;
-
-    let titles = focus.then(|| window_titles(&pids)).unwrap_or_default();
+    let titles = match focus {
+        true => window_titles(&pids),
+        false => std::collections::HashMap::new(),
+    };
     println!(
         "phone buttons send {key}{}",
         match focus {
@@ -746,20 +648,128 @@ fn listen(options: Listening) -> Result<()> {
             println!("  launched this from (Terminal, iTerm, VS Code), then run this again.");
         }
     }
-    bridge(press_rx, registry.clone(), key, titles);
+
+    let settings = Settings {
+        pids: pids.clone(),
+        bind: bind.unwrap_or(match serve {
+            true => std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            false => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        }),
+        port: match serve {
+            true => port,
+            false => 0,
+        },
+        token,
+        trust: trust_network,
+        advertise,
+        sounds: library,
+        bite,
+        record: record.clone(),
+        flavor,
+        hub: hub
+            .map(|url| publisher(url, hub_secret, token))
+            .transpose()?,
+    };
+    let sink = Arc::new(Mutex::new(keystrokes()));
+    let seats = Arc::new(Mutex::new(warcry_rig::companion::roster(&pids)));
+    let fire: companion::Fire = {
+        let (sink, seats, titles) = (sink.clone(), seats.clone(), titles.clone());
+        Arc::new(move |press| {
+            let pid = warcry_rig::companion::pid_of(&seats, press.rig);
+            let target = pid.zip(titles.get(&pid.unwrap_or(0)).cloned());
+            let mut sink = sink.lock().expect("input poisoned");
+            let sink = sink.as_mut().context("input is unavailable")?;
+            deliver(sink, key, target.clone())?;
+            Ok(match target {
+                Some((pid, title)) => format!("{key} into pid {pid} {title:?}"),
+                None => format!("{key} into the front window"),
+            })
+        })
+    };
+    let watch: companion::Watch = Arc::new(told);
+    let companion = companion::Companion::start(settings, Arc::new(Vec::new), fire, watch)?;
+    record
+        .as_deref()
+        .iter()
+        .for_each(|dir| println!("recording armed casts to {}", dir.display()));
+    serve.then(|| pairing(&companion, trust_network));
 
     println!("listening. Ctrl+C to stop.");
-    while let Ok((pid, event)) = events.recv() {
-        let rig = rig_of(&registry, pid);
-        let label = label_of(&registry, rig);
-        report(&label, &event);
-        identify(&registry, rig, &event, &names);
-        for message in downlinks(rig, &event) {
-            relay.as_ref().map(|relay| relay.publish(message.clone()));
-            published.as_ref().map(|hub| hub.try_send(message));
+    let _alive = companion;
+    loop {
+        std::thread::park();
+    }
+}
+
+fn pairing(companion: &companion::Companion, trust: bool) {
+    trust.then(|| {
+        println!(
+            "WARNING --trust-network: anything that can reach port {} may press keys",
+            companion.port()
+        )
+    });
+    pairing_qr(&companion.url)
+        .iter()
+        .for_each(|qr| println!("\nscan this with your iPhone camera:\n{qr}"));
+    println!("or type it: {}\n", companion.url);
+}
+
+fn describe_library(library: &[warcry_ears::library::Sound], bite: &str) {
+    match library.is_empty() {
+        true => println!("no sound library loaded; bites will not be detected"),
+        false => library.iter().for_each(|sound| {
+            println!(
+                "sound \"{}\": {} examples, threshold {:.3}{}",
+                sound.name,
+                sound.examples(),
+                sound.threshold,
+                match sound.name == bite {
+                    true => "  <- reported as a bite",
+                    false => "",
+                }
+            )
+        }),
+    }
+}
+
+fn publisher(url: String, secret: Option<String>, token: warcry_link::Token) -> Result<Hub> {
+    let secret = secret
+        .as_deref()
+        .map(str::trim)
+        .map(warcry_link::Token::from_hex)
+        .transpose()
+        .map_err(|_| anyhow::anyhow!("--hub-secret must be 64 hex characters"))?
+        .ok_or_else(|| anyhow::anyhow!("--hub needs --hub-secret"))?;
+    println!("publishing to {url}");
+    Ok(Box::new(move |rigs, presses| {
+        warcry_rig::hub::publish(url, secret, token, rigs, presses)
+    }))
+}
+
+fn keystrokes() -> Option<warcry::input::EnigoSink> {
+    match warcry::input::EnigoSink::new() {
+        Ok(sink) => Some(sink),
+        Err(e) => {
+            println!("input unavailable, phone presses will do nothing: {e:#}");
+            None
         }
     }
-    Ok(())
+}
+
+fn told(seen: companion::Seen) {
+    match seen {
+        companion::Seen::Attached { pid, rate } => println!("attached pid {pid} at {rate} Hz"),
+        companion::Seen::Deaf { pid, why } => println!("cannot hear pid {pid}: {why}"),
+        companion::Seen::Heard { label, event, .. } => report(&label, &event),
+        companion::Seen::Named { rig, label } => println!("  rig {rig} is {label}"),
+        companion::Seen::Alerted { .. } => {}
+        companion::Seen::Fired { rig, slot, what } => {
+            println!("  sent {what} for rig {rig} slot {slot}")
+        }
+        companion::Seen::Refused { rig, slot, why } => {
+            println!("  rig {rig} slot {slot} went nowhere: {why}")
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -797,55 +807,8 @@ fn window_titles(pids: &[u32]) -> std::collections::HashMap<u32, String> {
     titles
 }
 
-fn bridge(
-    presses: crossbeam_channel::Receiver<warcry_link::Press>,
-    registry: Arc<Mutex<Vec<RigInfo>>>,
-    key: warcry::keys::Key,
-    titles: std::collections::HashMap<u32, String>,
-) {
-    std::thread::spawn(move || {
-        let mut sink = match warcry::input::EnigoSink::new() {
-            Ok(sink) => sink,
-            Err(e) => {
-                println!("input unavailable, phone presses will do nothing: {e:#}");
-                return;
-            }
-        };
-        let mut last: std::collections::HashMap<RigId, std::time::Instant> =
-            std::collections::HashMap::new();
-        while let Ok(press) = presses.recv() {
-            let fresh = last
-                .get(&press.rig)
-                .is_none_or(|when| when.elapsed() >= DEBOUNCE);
-            if !fresh {
-                println!(
-                    "  ignored a second press on rig {} within {DEBOUNCE:?}",
-                    press.rig
-                );
-                continue;
-            }
-            last.insert(press.rig, std::time::Instant::now());
-            let pid = pid_of(&registry, press.rig);
-            let target = pid.zip(titles.get(&pid.unwrap_or(0)).cloned());
-            let focusing = match &target {
-                Some((pid, title)) => format!("focus pid {pid} {title:?}, "),
-                None => "no focus, ".to_string(),
-            };
-            let sent = deliver(&mut sink, key, target);
-            match sent {
-                Ok(()) => println!(
-                    "  {focusing}sent {key} for rig {} slot {}",
-                    press.rig, press.slot
-                ),
-                Err(e) => println!("  {focusing}could not send {key}: {e:#}"),
-            }
-        }
-    });
-}
-
 const SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
 const HOLD: std::time::Duration = std::time::Duration::from_millis(45);
-const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600);
 
 fn deliver(
     sink: &mut impl warcry::input::InputSink,
@@ -855,7 +818,8 @@ fn deliver(
     target
         .map(|(pid, _)| raise(pid))
         .transpose()?
-        .map(|()| std::thread::sleep(SETTLE));
+        .iter()
+        .for_each(|()| std::thread::sleep(SETTLE));
     sink.key(key, true)?;
     std::thread::sleep(HOLD);
     sink.key(key, false)?;
@@ -885,76 +849,6 @@ fn raise(_pid: u32) -> Result<()> {
     Ok(())
 }
 
-fn pid_of(registry: &Arc<Mutex<Vec<RigInfo>>>, rig: RigId) -> Option<u32> {
-    registry
-        .lock()
-        .expect("registry poisoned")
-        .iter()
-        .find(|entry| entry.id == rig)
-        .map(|entry| entry.pid)
-}
-
-fn roster(pids: &[u32]) -> Vec<RigInfo> {
-    pids.iter()
-        .enumerate()
-        .map(|(index, pid)| RigInfo {
-            id: index as RigId,
-            label: format!("Window {}", index + 1),
-            pid: *pid,
-            actions: vec![
-                ActionSlot {
-                    slot: 0,
-                    label: "cast".into(),
-                },
-                ActionSlot {
-                    slot: 1,
-                    label: "reel".into(),
-                },
-            ],
-            snr: Snr::Unknown,
-            ready: true,
-        })
-        .collect()
-}
-
-fn rig_of(registry: &Arc<Mutex<Vec<RigInfo>>>, pid: u32) -> RigId {
-    registry
-        .lock()
-        .expect("registry poisoned")
-        .iter()
-        .find(|rig| rig.pid == pid)
-        .map(|rig| rig.id)
-        .unwrap_or_default()
-}
-
-fn label_of(registry: &Arc<Mutex<Vec<RigInfo>>>, rig: RigId) -> String {
-    registry
-        .lock()
-        .expect("registry poisoned")
-        .iter()
-        .find(|entry| entry.id == rig)
-        .map(|entry| entry.label.clone())
-        .unwrap_or_else(|| format!("rig {rig}"))
-}
-
-fn identify(registry: &Arc<Mutex<Vec<RigInfo>>>, rig: RigId, event: &Event, names: &Names) {
-    let Event::Beacon(Beacon::Identity(identity)) = event else {
-        return;
-    };
-    let identity = *identity;
-    let label = names
-        .label(identity)
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("character {identity:#05o}"));
-    println!("  rig {rig} is {label}");
-    registry
-        .lock()
-        .expect("registry poisoned")
-        .iter_mut()
-        .filter(|entry| entry.id == rig)
-        .for_each(|entry| entry.label = label.clone());
-}
-
 fn report(label: &str, event: &Event) {
     match event {
         Event::Beacon(beacon) => println!("[{label}] beacon {beacon:?}"),
@@ -967,58 +861,5 @@ fn report(label: &str, event: &Event) {
         ),
         Event::Observation(observation) => println!("[{label}] {observation:?}"),
         Event::Sound { name, score } => println!("[{label}] heard {name} ({score:.3})"),
-    }
-}
-
-fn downlinks(rig: RigId, event: &Event) -> Vec<Downlink> {
-    let state = |state| Downlink::State {
-        rig,
-        state,
-        server_ms: now_ms(),
-    };
-    let alert = |alert| Downlink::Alert {
-        rig,
-        alert,
-        server_ms: now_ms(),
-    };
-    match event {
-        Event::Observation(Observation::Armed { ends_in_ms }) => {
-            vec![state(RigState::Casting {
-                ends_in_ms: *ends_in_ms,
-            })]
-        }
-        Event::Observation(Observation::Bite { confidence, .. }) => vec![
-            alert(Alert::Bite {
-                confidence: *confidence,
-            }),
-            state(RigState::Bite {
-                confidence: *confidence,
-                age_ms: 0,
-            }),
-        ],
-        Event::Observation(Observation::Disarmed { outcome }) => disarmed(*outcome, state, alert),
-        Event::Beacon(Beacon::BagsFull) => {
-            vec![alert(Alert::BagsFull), state(RigState::BagsFull)]
-        }
-        Event::Beacon(Beacon::LureExpiring) => {
-            vec![alert(Alert::LureExpiring { secs_left: 60 })]
-        }
-        Event::Beacon(Beacon::LureGone) => vec![alert(Alert::LureGone)],
-        Event::Beacon(Beacon::Attention) => vec![alert(Alert::Attention {
-            reason: Attention::Unspecified,
-        })],
-        Event::Beacon(_) | Event::Sound { .. } => vec![],
-    }
-}
-
-fn disarmed(
-    outcome: Outcome,
-    state: impl Fn(RigState) -> Downlink,
-    alert: impl Fn(Alert) -> Downlink,
-) -> Vec<Downlink> {
-    match outcome {
-        Outcome::Caught => vec![alert(Alert::Caught), state(RigState::Caught)],
-        Outcome::Expired => vec![alert(Alert::CastExpired), state(RigState::Expired)],
-        Outcome::Cancelled => vec![state(RigState::Idle)],
     }
 }

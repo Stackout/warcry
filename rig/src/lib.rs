@@ -1,3 +1,5 @@
+pub mod companion;
+pub mod deck;
 pub mod find;
 pub mod hub;
 pub mod names;
@@ -122,8 +124,8 @@ pub fn attach(
             while let Ok(samples) = audio.recv() {
                 let tick = pipeline.advance(&samples);
                 recorder
-                    .as_mut()
-                    .map(|recorder| recorder.observe(pid, &tick));
+                    .iter_mut()
+                    .for_each(|recorder| recorder.observe(pid, &tick));
                 let sent = tick
                     .events
                     .into_iter()
