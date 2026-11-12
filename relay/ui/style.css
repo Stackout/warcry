@@ -12,20 +12,24 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body {
+  height: 100%;
+  overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
 
 body {
   margin: 0;
+  position: fixed;
+  inset: 0;
   padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
   background: var(--bg);
   color: var(--text);
   font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   user-select: none;
+  -webkit-user-select: none;
 }
 
 header {
@@ -41,7 +45,15 @@ h1 { font-size: 20px; margin: 0; letter-spacing: 0.04em; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); transition: background 0.2s; }
 .status.live .dot { background: var(--good); }
 
-main { display: grid; gap: 14px; grid-template-columns: 1fr; flex: 1; align-content: start; }
+main {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  align-content: start;
+}
 @media (min-width: 560px) { main { grid-template-columns: 1fr 1fr; } }
 
 .rig {
@@ -114,46 +126,65 @@ body.alarm .rig.bite {
   animation: shout 0.16s ease-in-out infinite alternate;
 }
 
-@keyframes rainbow {
-  0% { background: #ff0048; border-color: #fff; }
-  16% { background: #ff7a00; border-color: #ffe9a8; }
-  33% { background: #f2e000; border-color: #fff; }
-  50% { background: #00e36a; border-color: #d4ffe8; }
-  66% { background: #00c2ff; border-color: #fff; }
-  83% { background: #9a4bff; border-color: #efe2ff; }
-  100% { background: #ff0048; border-color: #fff; }
+@property --halo {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
 }
 
-@keyframes jitter {
-  0% { transform: translateX(0) scale(1) rotate(0deg); }
-  20% { transform: translateX(-4px) scale(1.03) rotate(-1deg); }
-  45% { transform: translateX(4px) scale(1.05) rotate(1deg); }
-  70% { transform: translateX(-3px) scale(1.03) rotate(-1deg); }
-  100% { transform: translateX(0) scale(1) rotate(0deg); }
+@keyframes halo {
+  to { --halo: 360deg; }
+}
+
+.rig.bite .reel[data-label="reel"] {
+  position: relative;
+  isolation: isolate;
+}
+
+.rig.bite .reel[data-label="reel"]::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 19px;
+  padding: 3px;
+  background: conic-gradient(
+    from var(--halo),
+    #ff0048,
+    #ff7a00,
+    #f2e000,
+    #00e36a,
+    #00c2ff,
+    #9a4bff,
+    #ff0048
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: halo 1.4s linear infinite;
+  z-index: 1;
 }
 
 body.alarm .rig.bite .reel[data-label="reel"] {
-  animation:
-    rainbow 0.4s linear infinite,
-    jitter 0.22s ease-in-out infinite,
-    pulse 0.2s ease-in-out infinite alternate;
-  color: #fff;
-  font-size: 26px;
-  letter-spacing: 0.16em;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+  animation: pulse 0.2s ease-in-out infinite alternate;
+}
+
+body.alarm .rig.bite .reel[data-label="reel"]::before {
+  animation: halo 0.8s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
   body.alarm,
   body.alarm .rig.bite,
-  body.alarm .rig.bite .reel[data-label="reel"] {
+  body.alarm .rig.bite .reel[data-label="reel"],
+  body.alarm .rig.bite .reel[data-label="reel"]::before {
     animation: none;
   }
   body.alarm { background: #6b3300; }
-  body.alarm .rig.bite .reel[data-label="reel"] {
-    background: var(--glow);
-    color: #2b1600;
-  }
 }
 
 .ring { height: 4px; border-radius: 2px; background: var(--edge); overflow: hidden; }
@@ -191,3 +222,35 @@ footer { display: flex; align-items: center; justify-content: space-between; pad
 
 .toggle.on { border-color: var(--good); color: var(--good); }
 .latency { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 12px 0 0;
+}
+
+.stat {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 8px 6px;
+  text-align: center;
+}
+
+.stat b {
+  display: block;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat span {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.stat.hot b { color: var(--glow); }
+.stat.best { animation: shout 0.3s ease-in-out 3 alternate; border-color: var(--good); }
+.stat.best b { color: var(--good); }

@@ -13,6 +13,62 @@ const token = (() => {
 
 const state = { socket: null, seq: 0, rigs: new Map(), chime: null, pending: new Set(), alarm: null }
 
+const score = {
+  casts: 0,
+  caught: 0,
+  missed: 0,
+  streak: 0,
+  reactions: [],
+  best: Number(localStorage.getItem('warcry.best') || 0),
+  bestStreak: Number(localStorage.getItem('warcry.streak') || 0),
+  bitAt: new Map(),
+}
+
+const average = (values) =>
+  values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0
+
+const stat = (value, label, extra) =>
+  `<div class="stat ${extra || ''}"><b>${value}</b><span>${label}</span></div>`
+
+const showScore = (celebrate) => {
+  const mean = average(score.reactions)
+  el('stats').innerHTML = [
+    stat(score.caught, 'caught'),
+    stat(score.missed, 'missed', score.missed > 0 ? 'hot' : ''),
+    stat(score.streak, 'streak', score.streak >= 3 ? 'hot' : ''),
+    stat(
+      score.best ? `${(score.best / 1000).toFixed(2)}s` : '--',
+      mean ? `best, avg ${(mean / 1000).toFixed(2)}s` : 'reaction',
+      celebrate ? 'best' : ''
+    ),
+  ].join('')
+}
+
+const reacted = (rig) => {
+  const bit = score.bitAt.get(rig)
+  score.bitAt.delete(rig)
+  if (!bit) return showScore(false)
+  const took = Date.now() - bit
+  score.reactions.push(took)
+  const record = !score.best || took < score.best
+  record && (score.best = took) && localStorage.setItem('warcry.best', String(took))
+  showScore(record)
+}
+
+const landed = () => {
+  score.caught += 1
+  score.streak += 1
+  score.streak > score.bestStreak &&
+    ((score.bestStreak = score.streak), localStorage.setItem('warcry.streak', String(score.streak)))
+  showScore(false)
+}
+
+const lapsed = (rig) => {
+  score.bitAt.has(rig) && ((score.missed += 1), (score.streak = 0))
+  score.bitAt.delete(rig)
+  showScore(false)
+}
+
 const setStatus = (live, text) => {
   el('status').classList.toggle('live', live)
   el('statusText').textContent = text
@@ -134,6 +190,7 @@ const press = (rig) => {
     press: { rig, slot: reeling ? made.reel : made.cast, seq: state.seq, at_ms: Date.now() },
   })
   made.card.classList.remove('bite')
+  reeling && reacted(rig)
   mode(made, reeling ? 'reeling' : 'casting')
   clearTimeout(made.revert)
   made.revert = setTimeout(() => mode(made, 'cast'), GIVE_UP)
@@ -217,6 +274,8 @@ const applyState = (rig, rig_state) => {
   const made = state.rigs.get(rig)
   if (!made) return
   const { name, label, fields } = describe(rig_state)
+  name === 'casting' && ((score.casts += 1), showScore(false))
+  name === 'expired' && lapsed(rig)
   made.state_line.textContent = label
   made.card.classList.toggle('bite', name === 'bite')
   made.card.classList.toggle('bags', name === 'bags_full')
@@ -253,8 +312,10 @@ const alerted = (rig, alert) => {
   const name = kind(alert)
   const urgency = name === 'bite' ? 3 : name === 'bags_full' ? 2 : 1
   name !== 'caught' && ring(urgency)
+  name === 'caught' && landed()
   const made = state.rigs.get(rig)
   if (!made || name !== 'bite') return
+  score.bitAt.set(rig, Date.now())
   made.card.classList.add('bite')
   mode(made, 'reel')
   alarm()
@@ -327,4 +388,5 @@ el('sound').addEventListener('pointerdown', (event) => {
   ring(3)
 })
 setInterval(countdown, 200)
+showScore(false)
 connect()
