@@ -130,6 +130,7 @@ struct Draft {
     keys: String,
     window: String,
     process: String,
+    pid: String,
     mode: String,
     always_active: bool,
 }
@@ -150,6 +151,12 @@ impl Draft {
                 .target
                 .as_ref()
                 .and_then(|t| t.process.clone())
+                .unwrap_or_default(),
+            pid: command
+                .target
+                .as_ref()
+                .and_then(|t| t.pid)
+                .map(|pid| pid.to_string())
                 .unwrap_or_default(),
             mode: command
                 .target
@@ -719,22 +726,27 @@ fn install_addon(flavor: String) -> Result<String, String> {
 struct WindowChoice {
     title: String,
     process: String,
+    pid: u32,
 }
 
 #[tauri::command]
 fn target_windows(state: State<App>) -> Vec<WindowChoice> {
-    let mut seen: Vec<(String, String)> = state
+    let mut seen: Vec<(String, String, u32)> = state
         .probe
         .lock()
         .windows
         .iter()
-        .map(|found| (found.title.clone(), found.process.clone()))
-        .filter(|(title, process)| !title.trim().is_empty() || !process.trim().is_empty())
+        .map(|found| (found.title.clone(), found.process.clone(), found.pid))
+        .filter(|(title, process, _)| !title.trim().is_empty() || !process.trim().is_empty())
         .collect();
     seen.sort();
     seen.dedup();
     seen.into_iter()
-        .map(|(title, process)| WindowChoice { title, process })
+        .map(|(title, process, pid)| WindowChoice {
+            title,
+            process,
+            pid,
+        })
         .collect()
 }
 

@@ -79,21 +79,51 @@ pub fn matches(w: &WindowInfo, t: &Target) -> bool {
 }
 
 pub fn find(t: &Target) -> Result<WindowInfo> {
+    let open = list()?;
     let exact = |w: &WindowInfo| {
         t.title
             .as_ref()
             .is_some_and(|x| x.eq_ignore_ascii_case(&w.title))
     };
-    list()?
-        .into_iter()
-        .filter(|w| matches(w, t))
-        .min_by_key(|w| !exact(w))
+    let picked = t
+        .pid
+        .and_then(|pid| open.iter().find(|w| w.pid == pid).cloned());
+    picked
+        .or_else(|| {
+            open.iter()
+                .filter(|w| matches(w, t))
+                .min_by_key(|w| !exact(w))
+                .cloned()
+        })
         .ok_or_else(|| anyhow!("no window matches target {}", t.describe()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_exact_window_wins_over_a_title_match() {
+        let make = |pid: u32, title: &str| WindowInfo {
+            id: pid as u64,
+            pid,
+            title: title.into(),
+            process: "Wow".into(),
+            class: String::new(),
+        };
+        let open = [make(1, "World of Warcraft"), make(2, "World of Warcraft")];
+        let target = Target {
+            title: Some("World of Warcraft".into()),
+            pid: Some(2),
+            ..Default::default()
+        };
+        let picked = open
+            .iter()
+            .find(|w| target.pid.is_some_and(|pid| w.pid == pid))
+            .unwrap();
+        assert_eq!(picked.pid, 2, "the chosen window lost to a title match");
+        assert!(open.iter().all(|w| matches(w, &target)));
+    }
 
     #[test]
     fn target_matching() {

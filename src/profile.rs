@@ -66,6 +66,8 @@ pub struct Target {
     pub process: Option<String>,
     pub class: Option<String>,
     #[serde(default)]
+    pub pid: Option<u32>,
+    #[serde(default)]
     pub mode: TargetMode,
 }
 
@@ -78,14 +80,18 @@ impl Target {
         ]
         .iter()
         .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}~{v:?}")))
+        .chain(self.pid.map(|pid| format!("pid {pid}")))
         .collect::<Vec<_>>()
         .join(" ")
     }
 
     fn check(&self) -> Result<()> {
         ensure!(
-            self.title.is_some() || self.process.is_some() || self.class.is_some(),
-            "target needs a title, process, or class"
+            self.title.is_some()
+                || self.process.is_some()
+                || self.class.is_some()
+                || self.pid.is_some(),
+            "target needs a window, title, process, or class"
         );
         Ok(())
     }

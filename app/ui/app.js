@@ -53,10 +53,38 @@ const draftFields = {
   phrase: 'd-phrase',
   keys: 'd-keys',
   hotkey: 'd-hotkey',
-  window: 'd-window',
-  process: 'd-process',
   mode: 'd-mode',
 }
+
+const windowOption = (choice) => el('option', {
+  value: String(choice.pid),
+  textContent: `${choice.title || choice.process} — ${choice.process}, pid ${choice.pid}`,
+  dataset: undefined,
+})
+
+const fillWindows = (draft) => call('target_windows').then((choices) => {
+  const pick = $('d-window-pick')
+  const live = choices || []
+  const options = [el('option', { value: '', textContent: 'whatever is focused' })]
+  live.forEach((choice) => {
+    const option = windowOption(choice)
+    option.setAttribute('data-title', choice.title)
+    option.setAttribute('data-process', choice.process)
+    options.push(option)
+  })
+  const saved = draft.pid || ''
+  if (saved && !live.some((c) => String(c.pid) === String(saved))) {
+    const gone = el('option', {
+      value: String(saved),
+      textContent: `${draft.window || 'saved window'} — not running`,
+    })
+    gone.setAttribute('data-title', draft.window || '')
+    gone.setAttribute('data-process', draft.process || '')
+    options.push(gone)
+  }
+  pick.replaceChildren(...options)
+  pick.value = saved
+})
 
 const showEditor = (index, draft) => {
   editing = index
@@ -67,15 +95,7 @@ const showEditor = (index, draft) => {
   $('editor').hidden = false
   $('add-command').hidden = true
   $('d-name').focus()
-  call('target_windows').then((choices) => {
-    const unique = (values) => [...new Set(values.filter(Boolean))].sort()
-    $('window-list').replaceChildren(
-      ...unique((choices || []).map((c) => c.title)).map((t) => el('option', { value: t }))
-    )
-    $('process-list').replaceChildren(
-      ...unique((choices || []).map((c) => c.process)).map((p) => el('option', { value: p }))
-    )
-  })
+  fillWindows(draft)
 }
 
 const hideEditor = () => {
@@ -89,6 +109,10 @@ const saveDraft = () => {
     Object.entries(draftFields).map(([key, id]) => [key, $(id).value.trim()])
   )
   draft.always_active = $('d-active').checked
+  const picked = $('d-window-pick').selectedOptions[0]
+  draft.pid = $('d-window-pick').value
+  draft.window = picked ? picked.getAttribute('data-title') || '' : ''
+  draft.process = picked ? picked.getAttribute('data-process') || '' : ''
   invoke('edit_command', { index: editing, draft })
     .then(hideEditor)
     .then(refresh)
@@ -128,31 +152,41 @@ const renderCommands = (commands) => {
   $('commands').replaceChildren(...commands.map(commandRow))
 }
 
+const flavorName = (label) => {
+  const tail = label.split(' ').pop() || label
+  const bare = tail.replace(/^_|_$/g, '').replace(/_/g, ' ')
+  return bare.charAt(0).toUpperCase() + bare.slice(1)
+}
+
 const renderAddon = () => call('wow_addon').then((installs) => {
   const box = $('addon')
-  if (!installs || !installs.length) {
-    return box.replaceChildren(el('p', { className: 'meta', textContent: 'No World of Warcraft found.' }))
+  const list = installs || []
+  $('addon-version').textContent = list.length ? `v${list[0].bundled}` : ''
+  if (!list.length) {
+    return box.replaceChildren(el('p', { className: 'meta', textContent: 'No World of Warcraft found' }))
   }
-  box.replaceChildren(...installs.map((a) => {
-    const current = a.installed === a.bundled
-    const state = a.installed ? `v${a.installed}` : 'not installed'
-    return el('div', { className: 'addon-row' },
-      el('div', {},
-        el('b', { textContent: a.label }),
-        el('span', { className: 'meta', textContent: ` ${state}` })),
-      el('button', {
-        className: current ? 'ghost small' : 'primary',
-        textContent: a.installed ? (current ? 'Reinstall' : `Update to v${a.bundled}`) : 'Install',
-        onclick: (event) => {
-          event.currentTarget.disabled = true
-          invoke('install_addon', { flavor: a.flavor })
-            .then(toast)
-            .catch((error) => toast(String(error)))
-            .finally(renderAddon)
-        },
+  const stale = list.filter((a) => a.installed !== a.bundled)
+  box.replaceChildren(
+    ...list.map((a) => el('div', { className: 'addon-row' },
+      el('span', { textContent: flavorName(a.label) }),
+      el('span', {
+        className: a.installed === a.bundled ? 'found' : 'meta',
+        textContent: a.installed === a.bundled ? 'up to date' : (a.installed ? `v${a.installed}` : 'not installed'),
       }),
-    )
-  }))
+    )),
+    el('button', {
+      className: stale.length ? 'primary' : 'ghost small',
+      textContent: stale.length ? `Install into ${stale.length} ${stale.length === 1 ? 'client' : 'clients'}` : 'Reinstall',
+      onclick: (event) => {
+        event.currentTarget.disabled = true
+        const wanted = stale.length ? stale : list
+        Promise.all(wanted.map((a) => invoke('install_addon', { flavor: a.flavor })))
+          .then(() => toast('Addon installed. Restart World of Warcraft.'))
+          .catch((error) => toast(String(error)))
+          .finally(renderAddon)
+      },
+    }),
+  )
 })
 
 const render = (s) => {

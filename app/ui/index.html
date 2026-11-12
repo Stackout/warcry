@@ -66,7 +66,7 @@
       </section>
 
       <section class="card">
-        <h2>WoW addon</h2>
+        <h2>WoW addon <small id="addon-version"></small></h2>
         <div id="addon" class="addon"></div>
       </section>
 
@@ -110,10 +110,7 @@
           <label>Say<input id="d-phrase" placeholder="heal [my;] pet" autocomplete="off"></label>
           <label>Press<input id="d-keys" placeholder="shift+3" autocomplete="off"></label>
           <label>Hotkey<input id="d-hotkey" placeholder="optional, ctrl+alt+h" autocomplete="off"></label>
-          <label>Window<input id="d-window" list="window-list" placeholder="whatever is focused" autocomplete="off"></label>
-          <datalist id="window-list"></datalist>
-          <label>Process<input id="d-process" list="process-list" placeholder="e.g. Wow-healer.exe, to tell clients apart" autocomplete="off"></label>
-          <datalist id="process-list"></datalist>
+          <label>Window<select id="d-window-pick"></select></label>
           <label>Send<select id="d-mode">
             <option value="background">in the background, no focus steal</option>
             <option value="focus_restore">focus it, then give focus back</option>
