@@ -797,7 +797,20 @@ fn bridge(
                 return;
             }
         };
+        let mut last: std::collections::HashMap<RigId, std::time::Instant> =
+            std::collections::HashMap::new();
         while let Ok(press) = presses.recv() {
+            let fresh = last
+                .get(&press.rig)
+                .is_none_or(|when| when.elapsed() >= DEBOUNCE);
+            if !fresh {
+                println!(
+                    "  ignored a second press on rig {} within {DEBOUNCE:?}",
+                    press.rig
+                );
+                continue;
+            }
+            last.insert(press.rig, std::time::Instant::now());
             let pid = pid_of(&registry, press.rig);
             let target = pid.zip(titles.get(&pid.unwrap_or(0)).cloned());
             let focusing = match &target {
@@ -818,6 +831,7 @@ fn bridge(
 
 const SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
 const HOLD: std::time::Duration = std::time::Duration::from_millis(45);
+const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600);
 
 fn deliver(
     sink: &mut impl warcry::input::InputSink,

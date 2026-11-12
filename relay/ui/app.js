@@ -54,14 +54,23 @@ const alarm = () => {
 
 const send = (message) => state.socket?.readyState === 1 && state.socket.send(JSON.stringify(message))
 
-const press = (rig, slot) => {
+const LABELS = { cast: 'cast', reel: 'reel', casting: 'casting...', reeling: 'reeling...' }
+const WAITING = ['casting', 'reeling']
+const GIVE_UP = 3000
+
+const press = (rig) => {
+  const made = state.rigs.get(rig)
+  if (!made || made.button.disabled) return
+  const reeling = made.mode === 'reel'
   state.seq += 1
   state.pending.add(state.seq)
-  send({ press: { rig, slot, seq: state.seq, at_ms: Date.now() } })
-  const made = state.rigs.get(rig)
-  if (!made) return
+  send({
+    press: { rig, slot: reeling ? made.reel : made.cast, seq: state.seq, at_ms: Date.now() },
+  })
   made.card.classList.remove('bite')
-  mode(made, 'cast')
+  mode(made, reeling ? 'reeling' : 'casting')
+  clearTimeout(made.revert)
+  made.revert = setTimeout(() => mode(made, 'cast'), GIVE_UP)
   alarm()
 }
 
@@ -95,7 +104,7 @@ const tile = (rig) => {
     reel: slotFor(rig, 'reel'),
     mode: 'cast',
   }
-  button.addEventListener('click', () => press(rig.id, made[made.mode]))
+  button.addEventListener('click', () => press(rig.id))
   card.append(heading, state_line, ring, button)
   mode(made, 'cast')
   return made
@@ -103,8 +112,9 @@ const tile = (rig) => {
 
 const mode = (made, next) => {
   made.mode = next
-  made.button.textContent = next
+  made.button.textContent = LABELS[next] || next
   made.button.dataset.label = next
+  made.button.disabled = WAITING.includes(next)
 }
 
 const render = (rigs) => {
@@ -143,8 +153,15 @@ const applyState = (rig, rig_state) => {
   made.card.classList.toggle('bags', name === 'bags_full')
   made.deadline = name === 'casting' ? Date.now() + fields.ends_in_ms : 0
   name !== 'casting' && (made.fill.style.width = '0%')
-  mode(made, name === 'bite' ? 'reel' : 'cast')
+  clearTimeout(made.revert)
+  mode(made, settled(name))
   alarm()
+}
+
+const settled = (name) => {
+  if (name === 'bite') return 'reel'
+  if (name === 'casting') return 'casting'
+  return 'cast'
 }
 
 const countdown = () => {
@@ -186,6 +203,8 @@ const handlers = {
   pressed: (fields) => {
     state.pending.delete(fields.seq)
     el('latency').textContent = fields.ok ? 'sent' : 'refused'
+    const made = state.rigs.get(fields.rig)
+    made && !fields.ok && (clearTimeout(made.revert), mode(made, 'cast'))
   },
   pong: () => {},
 }

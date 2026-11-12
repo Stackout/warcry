@@ -67,6 +67,13 @@ main { display: grid; gap: 14px; grid-template-columns: 1fr; flex: 1; align-cont
 
 .reel:active { transform: scale(0.97); }
 
+.reel:disabled {
+  background: #1d1030;
+  border-color: var(--edge);
+  color: var(--dim);
+  opacity: 0.75;
+}
+
 .rig.bite .reel[data-label="reel"] {
   background: var(--glow);
   border-color: var(--glow);
