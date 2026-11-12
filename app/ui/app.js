@@ -128,6 +128,33 @@ const renderCommands = (commands) => {
   $('commands').replaceChildren(...commands.map(commandRow))
 }
 
+const renderAddon = () => call('wow_addon').then((installs) => {
+  const box = $('addon')
+  if (!installs || !installs.length) {
+    return box.replaceChildren(el('p', { className: 'meta', textContent: 'No World of Warcraft found.' }))
+  }
+  box.replaceChildren(...installs.map((a) => {
+    const current = a.installed === a.bundled
+    const state = a.installed ? `v${a.installed}` : 'not installed'
+    return el('div', { className: 'addon-row' },
+      el('div', {},
+        el('b', { textContent: a.label }),
+        el('span', { className: 'meta', textContent: ` ${state}` })),
+      el('button', {
+        className: current ? 'ghost small' : 'primary',
+        textContent: a.installed ? (current ? 'Reinstall' : `Update to v${a.bundled}`) : 'Install',
+        onclick: (event) => {
+          event.currentTarget.disabled = true
+          invoke('install_addon', { flavor: a.flavor })
+            .then(toast)
+            .catch((error) => toast(String(error)))
+            .finally(renderAddon)
+        },
+      }),
+    )
+  }))
+})
+
 const render = (s) => {
   state = s
   if (s.failure) toast(s.failure)
@@ -224,6 +251,7 @@ $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.tar
 $('download').addEventListener('click', () => call('download_model', { name: state.model }).finally(refresh))
 $('edit').addEventListener('click', () => call('open_profile'))
 $('add-command').addEventListener('click', () => showEditor(null, { mode: 'background' }))
+renderAddon()
 $('d-save').addEventListener('click', saveDraft)
 $('d-cancel').addEventListener('click', hideEditor)
 $('folder').addEventListener('click', () => call('open_folder'))

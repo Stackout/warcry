@@ -276,3 +276,7 @@ select:focus, .try input:focus { border-color: rgba(255, 122, 26, 0.6); }
 }
 
 .commands .editor-row { margin-top: 8px; }
+
+.addon { display: grid; gap: 8px; }
+.addon-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.addon-row b { font-weight: 600; }

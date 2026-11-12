@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod addon;
+
 use anyhow::{Context, Result, anyhow, ensure};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -673,6 +675,47 @@ fn remove_command(app: AppHandle, index: usize) -> Result<(), String> {
 }
 
 #[derive(Serialize)]
+struct AddonView {
+    flavor: String,
+    label: String,
+    installed: Option<String>,
+    bundled: String,
+}
+
+#[tauri::command]
+fn wow_addon() -> Vec<AddonView> {
+    let bundled = addon::version();
+    addon::roots()
+        .iter()
+        .flat_map(|root| addon::flavors(root))
+        .map(|flavor| AddonView {
+            label: format!(
+                "{} {}",
+                flavor
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                flavor
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            ),
+            installed: addon::installed(&flavor),
+            bundled: bundled.clone(),
+            flavor: flavor.to_string_lossy().to_string(),
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn install_addon(flavor: String) -> Result<String, String> {
+    addon::install(std::path::Path::new(&flavor))
+        .map(|files| format!("installed {files} files, restart World of Warcraft"))
+        .map_err(fail)
+}
+
+#[derive(Serialize)]
 struct WindowChoice {
     title: String,
     process: String,
@@ -820,7 +863,9 @@ fn main() {
             try_phrase,
             edit_command,
             remove_command,
-            target_windows
+            target_windows,
+            wow_addon,
+            install_addon
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Warcry");
