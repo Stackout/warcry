@@ -1,0 +1,21 @@
+[package]
+name = "warcry-relay"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Warcry companion relay: serves the web UI and the phone protocol."
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1.0.104"
+crossbeam-channel = "0.5.17"
+getrandom = "0.3.4"
+serde_json = "1.0.154"
+tracing = "0.1.44"
+tungstenite = "0.29.0"
+warcry-link = { path = "../link" }
+
+[dev-dependencies]
+serde_json = "1.0.154"
+tungstenite = "0.29.0"

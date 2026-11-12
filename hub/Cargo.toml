@@ -1,0 +1,24 @@
+[package]
+name = "warcry-hub"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Public fan-out hub: one Warcry desktop publishes, many phones listen."
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "warcry-hub"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+crossbeam-channel = "0.5.17"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tungstenite = "0.29.0"
+warcry-link = { path = "../link" }
+warcry-relay = { path = "../relay" }

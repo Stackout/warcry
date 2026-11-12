@@ -10,7 +10,7 @@ keywords = ["voice", "speech", "macro", "gaming", "automation"]
 categories = ["command-line-utilities", "accessibility", "games"]
 
 [workspace]
-members = [".", "app"]
+members = [".", "app", "link", "ears", "relay", "rig", "hub"]
 
 [features]
 default = ["whisper", "download"]

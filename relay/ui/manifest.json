@@ -1,0 +1,9 @@
+{
+  "name": "Warcry Companion",
+  "short_name": "Warcry",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0618",
+  "theme_color": "#0d0618",
+  "orientation": "portrait"
+}
