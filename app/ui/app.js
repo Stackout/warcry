@@ -91,6 +91,7 @@ const showEditor = (index, draft) => {
   Object.entries(draftFields).forEach(([key, id]) => ($(id).value = draft[key] || ''))
   $('d-mode').value = draft.mode || 'background'
   $('d-active').checked = !!draft.always_active
+  $('d-pad').checked = !!draft.pad
   $('d-error').textContent = ''
   $('editor').hidden = false
   $('add-command').hidden = true
@@ -109,6 +110,7 @@ const saveDraft = () => {
     Object.entries(draftFields).map(([key, id]) => [key, $(id).value.trim()])
   )
   draft.always_active = $('d-active').checked
+  draft.pad = $('d-pad').checked
   const picked = $('d-window-pick').selectedOptions[0]
   draft.pid = $('d-window-pick').value
   draft.window = picked ? picked.getAttribute('data-title') || '' : ''
@@ -140,6 +142,11 @@ const commandRow = (c) => el('li', {},
     c.editable
       ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
       : el('span', { className: 'meta', textContent: 'too detailed to edit here, use Edit profile' }),
+    el('button', {
+      className: c.pad ? 'on' : '',
+      textContent: c.pad ? 'On my phone' : 'Add to phone',
+      onclick: () => call('set_pad', { index: c.index, on: !c.pad }).then(refresh),
+    }),
     el('button', {
       textContent: 'Delete',
       onclick: (event) => removeCommand(event.currentTarget, c),
@@ -189,6 +196,37 @@ const renderAddon = () => call('wow_addon').then((installs) => {
   )
 })
 
+const seatRow = (seat) => el('li', {},
+  el('b', { textContent: seat.label }),
+  el('span', { className: 'meta', textContent: seat.deck ? 'your buttons' : `pid ${seat.pid}` }),
+  el('div', { className: 'phrases' }, ...seat.buttons.map((b) => el('span', { textContent: b }))),
+)
+
+const renderPhone = (s) => {
+  const live = s.companion
+  const names = s.commands.map((c) => [c.name, c.name])
+  $('phone-count').textContent = s.commands.filter((c) => c.pad).length || ''
+  $('phone-state').textContent = live.running
+    ? `on, hearing ${live.hearing} window${live.hearing === 1 ? '' : 's'}`
+    : 'off'
+  $('phone-power').textContent = live.running ? 'Turn off' : 'Turn on'
+  $('phone-power').className = live.running ? 'ghost' : 'primary'
+  $('phone-pair').hidden = !live.running
+  $('phone-copy').hidden = !live.running
+  $('phone-qr').innerHTML = live.qr || ''
+  $('phone-url').textContent = live.url || ''
+  $('phone-seats').replaceChildren(...(live.seats || []).map(seatRow))
+  fill($('phone-cast'), [['', 'just press a key'], ...names], s.deck.cast || '')
+  fill($('phone-reel'), [['', 'just press a key'], ...names], s.deck.reel || '')
+  const keep = (id, value) => document.activeElement === $(id) || ($(id).value = value)
+  keep('phone-key', s.deck.key || '')
+  keep('phone-port', s.deck.port)
+  keep('phone-advertise', s.deck.advertise || '')
+  $('phone-enabled').checked = s.deck.enabled
+  $('phone-trust').checked = s.deck.trust
+  $('phone-speak').checked = s.deck.speak
+}
+
 const render = (s) => {
   state = s
   if (s.failure) toast(s.failure)
@@ -218,11 +256,49 @@ const render = (s) => {
   $('welcome').hidden = Boolean(s.profile)
   $('feed-empty').hidden = !s.profile || $('feed').children.length > 0
   renderCommands(s.commands)
+  renderPhone(s)
 }
 
 const refresh = () => call('snapshot').then(render)
 
 const saveConfig = (patch) => call('set_config', { config: { ...state.config, ...patch } }).then(refresh)
+
+const saveDeck = (patch) => call('set_deck', { deck: { ...state.deck, ...patch } }).then(refresh)
+
+const URGENT = 3
+
+const alarm = (urgency) => {
+  if (urgency < URGENT) return
+  alarm.context = alarm.context || new AudioContext()
+  const context = alarm.context
+  context.resume()
+  const at = context.currentTime
+  ;[880, 1320, 1760].forEach((frequency, index) => {
+    const osc = context.createOscillator()
+    const gain = context.createGain()
+    osc.frequency.value = frequency
+    osc.type = 'triangle'
+    gain.gain.setValueAtTime(0.0001, at + index * 0.12)
+    gain.gain.exponentialRampToValueAtTime(0.4, at + index * 0.12 + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + index * 0.12 + 0.24)
+    osc.connect(gain).connect(context.destination)
+    osc.start(at + index * 0.12)
+    osc.stop(at + index * 0.12 + 0.26)
+  })
+}
+
+const addPhoneFeed = (notice) => {
+  const feed = $('phone-feed')
+  feed.prepend(el('li', { className: notice.urgency >= URGENT ? 'fired' : 'miss' },
+    el('time', { textContent: clock() }),
+    el('div', { className: 'said' }, notice.text),
+    el('span', { className: 'chip', textContent: notice.kind }),
+  ))
+  Array.from(feed.children).slice(60).forEach((child) => child.remove())
+  $('phone-feed-empty').hidden = true
+  alarm(notice.urgency)
+  if (notice.kind === 'attached' || notice.kind === 'named' || notice.kind === 'deaf') refresh()
+}
 
 const addFeed = (note) => {
   const percent = Math.round((note.score || 0) * 100)
@@ -268,6 +344,7 @@ const NOTES = {
 }
 
 listen('note', ({ payload }) => (NOTES[payload.kind] || (() => {}))(payload))
+listen('companion', ({ payload }) => addPhoneFeed(payload))
 listen('log', ({ payload }) => appendLog(payload))
 listen('changed', refresh)
 listen('failure', refresh)
@@ -293,6 +370,26 @@ const create = (example) => call('create_profile', { example }).then(refresh)
 $('new-fishing').addEventListener('click', () => create('fishing'))
 $('new-starter').addEventListener('click', () => create('starter'))
 $('welcome-fishing').addEventListener('click', () => create('fishing'))
+
+$('phone-power').addEventListener('click', (event) => {
+  event.currentTarget.disabled = true
+  const command = state.companion.running ? 'companion_stop' : 'companion_start'
+  call(command).finally(() => {
+    event.currentTarget.disabled = false
+    refresh()
+  })
+})
+$('phone-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText(state.companion.url || '').then(() => toast('Link copied'))
+})
+$('phone-cast').addEventListener('change', (e) => saveDeck({ cast: e.target.value || null }))
+$('phone-reel').addEventListener('change', (e) => saveDeck({ reel: e.target.value || null }))
+$('phone-key').addEventListener('change', (e) => saveDeck({ key: e.target.value.trim() || "'" }))
+$('phone-port').addEventListener('change', (e) => saveDeck({ port: Number(e.target.value) || 8137 }))
+$('phone-advertise').addEventListener('change', (e) => saveDeck({ advertise: e.target.value.trim() || null }))
+$('phone-enabled').addEventListener('change', (e) => saveDeck({ enabled: e.target.checked }))
+$('phone-trust').addEventListener('change', (e) => saveDeck({ trust: e.target.checked }))
+$('phone-speak').addEventListener('change', (e) => saveDeck({ speak: e.target.checked }))
 
 $('try').addEventListener('submit', (e) => {
   e.preventDefault()

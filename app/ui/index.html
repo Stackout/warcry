@@ -82,6 +82,7 @@
       <nav class="tabs">
         <button data-tab="live" class="active">Live</button>
         <button data-tab="commands">Commands <small id="command-count"></small></button>
+        <button data-tab="phone">Phone <small id="phone-count"></small></button>
         <button data-tab="log">Log</button>
       </nav>
 
@@ -117,6 +118,7 @@
             <option value="focus">focus it and leave it focused</option>
           </select></label>
           <label class="check"><input type="checkbox" id="d-active"> Works even while not listening</label>
+          <label class="check"><input type="checkbox" id="d-pad"> Give it a button on my phone</label>
           <div class="editor-row">
             <button id="d-save" class="primary">Save</button>
             <button id="d-cancel">Cancel</button>
@@ -125,6 +127,55 @@
         </div>
         <button id="add-command" class="primary">Add a command</button>
         <ul id="commands" class="commands"></ul>
+      </div>
+
+      <div class="tab" id="tab-phone" hidden>
+        <div class="phone">
+          <section class="card wide">
+            <h2>Phone deck <small id="phone-state" class="meta"></small></h2>
+            <p class="meta">Warcry serves a page your phone opens over your own network. It shows a
+              button for every command you tick as a phone button, and a cast/reel button for each
+              World of Warcraft window it can hear.</p>
+            <div class="row">
+              <button id="phone-power" class="primary">Turn on</button>
+              <button id="phone-copy" class="ghost" hidden>Copy link</button>
+            </div>
+            <div id="phone-pair" class="pair" hidden>
+              <div id="phone-qr" class="qr"></div>
+              <div>
+                <p class="meta">Point your camera at this, or type it in.</p>
+                <code id="phone-url"></code>
+              </div>
+            </div>
+            <ul id="phone-seats" class="seats"></ul>
+          </section>
+
+          <section class="card wide">
+            <h2>Fishing buttons</h2>
+            <p class="meta">What the phone's cast and reel buttons do. Pick a command for voice and
+              phone parity, or leave them unset and Warcry taps one key into the window it heard.</p>
+            <label>Cast runs<select id="phone-cast"></select></label>
+            <label>Reel runs<select id="phone-reel"></select></label>
+            <label>Otherwise press<input id="phone-key" placeholder="'" autocomplete="off"></label>
+            <label class="check"><input type="checkbox" id="phone-speak"> Say alerts out loud, even
+              when this window is closed</label>
+          </section>
+
+          <section class="card wide">
+            <h2>Network</h2>
+            <label>Port<input id="phone-port" type="number" min="1" max="65535"></label>
+            <label>Address to show<input id="phone-advertise" placeholder="leave empty to guess" autocomplete="off"></label>
+            <label class="check"><input type="checkbox" id="phone-enabled"> Turn the deck on when Warcry opens</label>
+            <label class="check"><input type="checkbox" id="phone-trust"> No pairing token — anyone
+              on this network can press my buttons</label>
+          </section>
+
+          <section class="card wide">
+            <h2>Alerts</h2>
+            <ol id="phone-feed" class="feed"></ol>
+            <p id="phone-feed-empty" class="meta">Bites, bags and lures show up here as they happen.</p>
+          </section>
+        </div>
       </div>
 
       <div class="tab" id="tab-log" hidden>

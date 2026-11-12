@@ -446,6 +446,88 @@ fn disarmed(
     }
 }
 
+const SETTLE: Duration = Duration::from_millis(120);
+const HOLD: Duration = Duration::from_millis(45);
+
+pub fn remembered_token(path: &std::path::Path) -> Result<warcry_link::Token> {
+    let existing = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| warcry_link::Token::from_hex(text.trim()).ok());
+    match existing {
+        Some(token) => Ok(token),
+        None => {
+            let token = warcry_relay::fresh_token();
+            path.parent().map(std::fs::create_dir_all).transpose()?;
+            std::fs::write(path, token.to_hex())?;
+            restrict(path)?;
+            Ok(token)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn restrict(path: &std::path::Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict(_path: &std::path::Path) -> Result<()> {
+    Ok(())
+}
+
+pub fn tap(
+    key: warcry::keys::Key,
+    pid: Option<u32>,
+    front: &mut dyn warcry::input::InputSink,
+) -> Result<()> {
+    #[cfg(windows)]
+    if let Some(pid) = pid {
+        let target = warcry::profile::Target {
+            pid: Some(pid),
+            ..warcry::profile::Target::default()
+        };
+        let window = warcry::window::find(&target)?;
+        return hold(key, &mut warcry::window::BackgroundSink::new(&window));
+    }
+    pid.map(raise)
+        .transpose()?
+        .iter()
+        .for_each(|()| std::thread::sleep(SETTLE));
+    hold(key, front)
+}
+
+fn hold(key: warcry::keys::Key, sink: &mut dyn warcry::input::InputSink) -> Result<()> {
+    sink.key(key, true)?;
+    std::thread::sleep(HOLD);
+    sink.key(key, false)?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn raise(pid: u32) -> Result<()> {
+    let script = format!(
+        "tell application \"System Events\" to set frontmost of (first process whose unix id is {pid}) to true"
+    );
+    let out = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()?;
+    match out.status.success() {
+        true => Ok(()),
+        false => anyhow::bail!(
+            "could not raise pid {pid}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn raise(_pid: u32) -> Result<()> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -538,35 +538,10 @@ struct Listening {
 }
 
 fn remembered_token(path: Option<&std::path::Path>) -> Result<warcry_link::Token> {
-    let Some(path) = path else {
-        return Ok(warcry_relay::fresh_token());
-    };
-    let existing = std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| warcry_link::Token::from_hex(text.trim()).ok());
-    match existing {
-        Some(token) => Ok(token),
-        None => {
-            let token = warcry_relay::fresh_token();
-            path.parent().map(std::fs::create_dir_all).transpose()?;
-            std::fs::write(path, token.to_hex())?;
-            restrict(path)?;
-            println!("wrote a new pairing token to {}", path.display());
-            Ok(token)
-        }
+    match path {
+        None => Ok(warcry_relay::fresh_token()),
+        Some(path) => companion::remembered_token(path),
     }
-}
-
-#[cfg(unix)]
-fn restrict(path: &std::path::Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn restrict(_path: &std::path::Path) -> Result<()> {
-    Ok(())
 }
 
 fn pairing_qr(url: &str) -> Option<String> {
@@ -679,7 +654,7 @@ fn listen(options: Listening) -> Result<()> {
             let target = pid.zip(titles.get(&pid.unwrap_or(0)).cloned());
             let mut sink = sink.lock().expect("input poisoned");
             let sink = sink.as_mut().context("input is unavailable")?;
-            deliver(sink, key, target.clone())?;
+            companion::tap(key, target.as_ref().map(|(pid, _)| *pid), sink)?;
             Ok(match target {
                 Some((pid, title)) => format!("{key} into pid {pid} {title:?}"),
                 None => format!("{key} into the front window"),
@@ -805,48 +780,6 @@ fn window_titles(pids: &[u32]) -> std::collections::HashMap<u32, String> {
         None => println!("WARNING pid {pid} has no window, so --focus will be skipped for it"),
     });
     titles
-}
-
-const SETTLE: std::time::Duration = std::time::Duration::from_millis(120);
-const HOLD: std::time::Duration = std::time::Duration::from_millis(45);
-
-fn deliver(
-    sink: &mut impl warcry::input::InputSink,
-    key: warcry::keys::Key,
-    target: Option<(u32, String)>,
-) -> Result<()> {
-    target
-        .map(|(pid, _)| raise(pid))
-        .transpose()?
-        .iter()
-        .for_each(|()| std::thread::sleep(SETTLE));
-    sink.key(key, true)?;
-    std::thread::sleep(HOLD);
-    sink.key(key, false)?;
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn raise(pid: u32) -> Result<()> {
-    let script = format!(
-        "tell application \"System Events\" to set frontmost of (first process whose unix id is {pid}) to true"
-    );
-    let out = std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(script)
-        .output()?;
-    match out.status.success() {
-        true => Ok(()),
-        false => bail!(
-            "could not raise pid {pid}: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ),
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn raise(_pid: u32) -> Result<()> {
-    Ok(())
 }
 
 fn report(label: &str, event: &Event) {

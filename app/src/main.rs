@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod addon;
+mod companion;
 
 use anyhow::{Context, Result, anyhow, ensure};
 use parking_lot::Mutex;
@@ -34,6 +35,37 @@ struct Config {
     device: Option<String>,
     model: Option<String>,
     auto_start: bool,
+    deck: Deck,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Deck {
+    enabled: bool,
+    port: u16,
+    trust: bool,
+    advertise: Option<String>,
+    cast: Option<String>,
+    reel: Option<String>,
+    key: String,
+    speak: bool,
+    wow: Option<PathBuf>,
+}
+
+impl Default for Deck {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 8137,
+            trust: false,
+            advertise: None,
+            cast: None,
+            reel: None,
+            key: "'".into(),
+            speak: false,
+            wow: None,
+        }
+    }
 }
 
 impl Default for Config {
@@ -43,14 +75,19 @@ impl Default for Config {
             device: None,
             model: None,
             auto_start: true,
+            deck: Deck::default(),
         }
     }
 }
 
-fn home() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("warcry")
+pub fn home() -> PathBuf {
+    std::env::var_os("WARCRY_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("warcry")
+        })
 }
 
 fn profiles() -> Vec<PathBuf> {
@@ -99,8 +136,9 @@ struct Probe {
     devices: Vec<String>,
 }
 
-struct App {
+pub struct App {
     engine: Mutex<Option<Engine>>,
+    companion: Mutex<Option<companion::Live>>,
     config: Mutex<Config>,
     probe: Mutex<Probe>,
     busy: AtomicBool,
@@ -117,6 +155,7 @@ struct CommandView {
     hotkey: Option<String>,
     actions: usize,
     always_active: bool,
+    pad: bool,
     draft: Draft,
     editable: bool,
 }
@@ -133,6 +172,7 @@ struct Draft {
     pid: String,
     mode: String,
     always_active: bool,
+    pad: bool,
 }
 
 impl Draft {
@@ -164,6 +204,7 @@ impl Draft {
                 .map(|t| mode_name(t.mode))
                 .unwrap_or_else(|| mode_name(TargetMode::default())),
             always_active: command.always_active,
+            pad: command.pad,
         }
     }
 
@@ -190,6 +231,7 @@ impl Draft {
                     ..Target::default()
                 }),
             always_active: self.always_active,
+            pad: self.pad,
             actions: vec![press(keys)],
             ..Command::default()
         })
@@ -272,6 +314,8 @@ struct Snapshot {
     models: Vec<ModelView>,
     model: String,
     failure: Option<String>,
+    companion: companion::View,
+    deck: Deck,
 }
 
 fn command_views(profile: &Profile) -> Vec<CommandView> {
@@ -290,6 +334,7 @@ fn command_views(profile: &Profile) -> Vec<CommandView> {
                 hotkey: c.hotkey.clone(),
                 actions: c.actions.len(),
                 always_active: c.always_active,
+                pad: c.pad,
                 draft: Draft::of(c),
                 editable: simple(c),
             }
@@ -303,18 +348,24 @@ fn snapshot(state: State<App>) -> Snapshot {
     let path = config.profile();
     let loaded = path.as_ref().map(|p| Profile::load(p));
     let profile = loaded.as_ref().and_then(|r| r.as_ref().ok());
-    let engine = state.engine.lock();
+    let (running, listening) = {
+        let engine = state.engine.lock();
+        (
+            engine.is_some(),
+            engine
+                .as_ref()
+                .is_some_and(|engine| engine.shared().listening.load(SeqCst)),
+        )
+    };
     let model = config
         .model
         .clone()
         .or_else(|| profile.map(|p| p.settings.model.clone()))
         .unwrap_or_else(|| "base.en".into());
     Snapshot {
-        running: engine.is_some(),
+        running,
         busy: state.busy.load(SeqCst),
-        listening: engine
-            .as_ref()
-            .is_some_and(|e| e.shared().listening.load(SeqCst)),
+        listening,
         profile_error: loaded
             .as_ref()
             .and_then(|r| r.as_ref().err())
@@ -346,6 +397,8 @@ fn snapshot(state: State<App>) -> Snapshot {
         failure: state.failure.lock().take(),
         profiles: profiles(),
         profile: path,
+        companion: companion::view(&state),
+        deck: config.deck.clone(),
         config,
     }
 }
@@ -406,6 +459,15 @@ fn spawn_start(app: &AppHandle) {
             *app.state::<App>().failure.lock() = Some(message.clone());
             app.emit("failure", message).unwrap_or_default();
         }
+    });
+}
+
+fn spawn_companion(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let started = companion::start(&app);
+        drop(app.emit("changed", ()));
+        drop(started.inspect_err(|e| tracing::warn!("companion did not start: {e:#}")));
     });
 }
 
@@ -648,6 +710,7 @@ fn with_profile(
     let mut profile = Profile::load(&path).map_err(fail)?;
     change(&mut profile)?;
     profile.save(&path).map_err(fail)?;
+    companion::announce(app);
     drop(app.emit("changed", ()));
     Ok(())
 }
@@ -676,6 +739,58 @@ fn remove_command(app: AppHandle, index: usize) -> Result<(), String> {
         false => Err(format!("there is no command {index} to remove")),
         true => {
             profile.commands.remove(index);
+            Ok(())
+        }
+    })
+}
+
+#[tauri::command]
+async fn companion_start(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        companion::halt(&app);
+        let started = companion::start(&app).map_err(fail);
+        drop(app.emit("changed", ()));
+        started
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn companion_stop(app: AppHandle) {
+    companion::stop(&app);
+    drop(app.emit("changed", ()));
+}
+
+#[tauri::command]
+async fn set_deck(app: AppHandle, deck: Deck) -> Result<(), String> {
+    let state = app.state::<App>();
+    let restart = {
+        let mut config = state.config.lock();
+        let moved = config.deck.port != deck.port
+            || config.deck.trust != deck.trust
+            || config.deck.advertise != deck.advertise
+            || config.deck.wow != deck.wow;
+        config.deck = deck;
+        config.save().map_err(fail)?;
+        moved && state.companion.lock().is_some()
+    };
+    match restart {
+        true => companion_start(app).await,
+        false => {
+            companion::announce(&app);
+            drop(app.emit("changed", ()));
+            Ok(())
+        }
+    }
+}
+
+#[tauri::command]
+fn set_pad(app: AppHandle, index: usize, on: bool) -> Result<(), String> {
+    with_profile(&app, move |profile| match profile.commands.get_mut(index) {
+        None => Err(format!("there is no command {index}")),
+        Some(command) => {
+            command.pad = on;
             Ok(())
         }
     })
@@ -758,6 +873,7 @@ fn spawn_probe(app: AppHandle) {
                 let windows = window::list().unwrap_or_default();
                 let devices = audio::devices().unwrap_or_default();
                 *app.state::<App>().probe.lock() = Probe { windows, devices };
+                companion::rescan(&app);
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
         });
@@ -838,6 +954,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(App {
             engine: Mutex::new(None),
+            companion: Mutex::new(None),
             config: Mutex::new(Config::load()),
             probe: Mutex::new(Probe::default()),
             busy: AtomicBool::new(false),
@@ -852,6 +969,7 @@ fn main() {
             if config.auto_start && config.profile().is_some() {
                 spawn_start(app.handle());
             }
+            config.deck.enabled.then(|| spawn_companion(app.handle()));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -875,7 +993,11 @@ fn main() {
             remove_command,
             target_windows,
             wow_addon,
-            install_addon
+            install_addon,
+            companion_start,
+            companion_stop,
+            set_deck,
+            set_pad
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Warcry");

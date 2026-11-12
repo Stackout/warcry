@@ -11,7 +11,7 @@ const token = (() => {
   return localStorage.getItem('warcry.token') || '0'.repeat(64)
 })()
 
-const state = { socket: null, seq: 0, rigs: new Map(), chime: null, pending: new Set(), alarm: null }
+const state = { socket: null, seq: 0, rigs: new Map(), pads: new Map(), chime: null, pending: new Set(), alarm: null }
 
 const score = {
   casts: 0,
@@ -243,15 +243,51 @@ const mode = (made, next) => {
   made.button.disabled = WAITING.includes(next)
 }
 
+const tapPad = (rig, slot, button) => {
+  state.seq += 1
+  state.pads.set(state.seq, button)
+  send({ press: { rig, slot, seq: state.seq, at_ms: Date.now() } })
+  button.classList.add('hit')
+  navigator.vibrate && navigator.vibrate(18)
+  setTimeout(() => button.classList.remove('hit'), 220)
+}
+
+const pad = (rig, action) => {
+  const button = document.createElement('button')
+  button.className = 'pad'
+  button.type = 'button'
+  button.textContent = action.label
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    tapPad(rig.id, action.slot, button)
+  })
+  return button
+}
+
+const deck = (rig) => {
+  const card = document.createElement('section')
+  card.className = 'rig deck'
+  const heading = document.createElement('h2')
+  heading.textContent = rig.label
+  const grid = document.createElement('div')
+  grid.className = 'pads'
+  rig.actions.forEach((action) => grid.append(pad(rig, action)))
+  card.append(heading, grid)
+  return card
+}
+
+const fishing = (rig, host) => {
+  const made = tile(rig)
+  state.rigs.set(rig.id, made)
+  host.append(made.card)
+}
+
 const render = (rigs) => {
   const host = el('rigs')
   host.textContent = ''
   state.rigs.clear()
-  rigs.forEach((rig) => {
-    const made = tile(rig)
-    state.rigs.set(rig.id, made)
-    host.append(made.card)
-  })
+  state.pads.clear()
+  rigs.forEach((rig) => (rig.kind === 'deck' ? host.append(deck(rig)) : fishing(rig, host)))
   el('empty').classList.toggle('hidden', rigs.length > 0)
 }
 
@@ -321,6 +357,14 @@ const alerted = (rig, alert) => {
   alarm()
 }
 
+const answered = (fields) => {
+  const button = state.pads.get(fields.seq)
+  state.pads.delete(fields.seq)
+  if (!button || fields.ok) return
+  button.classList.add('refused')
+  setTimeout(() => button.classList.remove('refused'), 900)
+}
+
 const handlers = {
   welcome: (fields) => {
     setStatus(true, 'connected')
@@ -333,6 +377,7 @@ const handlers = {
   pressed: (fields) => {
     state.pending.delete(fields.seq)
     el('latency').textContent = fields.ok ? 'sent' : 'refused'
+    answered(fields)
     const made = state.rigs.get(fields.rig)
     made && !fields.ok && (clearTimeout(made.revert), mode(made, 'cast'))
   },

@@ -254,3 +254,38 @@ footer { display: flex; align-items: center; justify-content: space-between; pad
 .stat.hot b { color: var(--glow); }
 .stat.best { animation: shout 0.3s ease-in-out 3 alternate; border-color: var(--good); }
 .stat.best b { color: var(--good); }
+
+.pads {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (min-width: 420px) { .pads { grid-template-columns: repeat(3, 1fr); } }
+
+.pad {
+  appearance: none;
+  touch-action: none;
+  min-height: 86px;
+  padding: 10px 8px;
+  border: 2px solid var(--edge);
+  border-radius: 16px;
+  background: linear-gradient(#2a1740, #1d1030);
+  color: var(--text);
+  font: 600 15px/1.2 inherit;
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.08s, border-color 0.15s, color 0.15s;
+}
+
+.pad:active { transform: scale(0.96); }
+
+.pad.hit {
+  border-color: var(--glow);
+  color: var(--glow);
+  box-shadow: 0 0 24px 2px rgba(255, 179, 71, 0.28);
+}
+
+.pad.refused { border-color: var(--bad); color: var(--bad); }
+
+.deck h2 { color: var(--dim); font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; }

@@ -1,11 +1,16 @@
 # Warcry — working notes
 
-Warcry turns what you say into keystrokes in a game. Two things were added on top of that
-engine: a **phone companion** that hears a game window and alerts a phone, and a **command
-editor** in the desktop app so commands are made in a UI rather than a TOML file.
+Warcry turns what you say into keystrokes in a game. Three things were added on top of that
+engine: a **phone companion** that hears a game window and alerts a phone, a **command editor**
+in the desktop app, and a **phone deck** -- a button on the phone for any command you can say.
 
-Both were built and proven end to end on macOS 15.1 against World of Warcraft (`_forever_`,
-interface 16001) on 2026-11-12. The next target is a Windows multibox rig.
+The companion lives *inside the Tauri app*. `warcry-rig listen` still exists and still works,
+but nothing requires it: the app embeds the same LAN server and the same detection pipeline, so
+the phone connects straight to the desktop's local address. The optional hub in `hub/` is the
+only piece meant to leave the network, and it is still not deployed.
+
+Built and proven end to end on macOS 15.1 against World of Warcraft (`_forever_`, interface
+16001) on 2026-11-12. The next target is a Windows multibox rig.
 
 ## The invariant that shapes everything
 
@@ -16,7 +21,9 @@ reports; a human acts. This is structural, not a convention:
   warcry-ears` has no `enigo`. Keep it that way.
 - A keystroke can only originate from a `Press` that arrived over the network and passed
   `warcry-relay::host::Hosted`, which checks a pairing token, rejects replayed sequence
-  numbers, and rate-limits to 10/s.
+  numbers, and rate-limits to 10/s. The host decides what a press *does* through
+  `companion::Fire`; `Hosted` decides whether it happens at all. Both callers debounce one
+  (rig, slot) to 600ms.
 - A `Press` names an *action slot*, never a key. The desktop decides what slot 0 means.
 - There is deliberately no message meaning "reel when you detect a bite". Do not add one.
 
@@ -30,11 +37,11 @@ injects input, or touches the install.
 | crate | job |
 | --- | --- |
 | `warcry` (root) | the voice engine. `keys`, `input` (enigo), `window` (focus, `BackgroundSink` on Windows), `profile`, `matcher`, `engine`. |
-| `app/` | Tauri 2 tray app: engine control, **command editor**, **addon installer**. |
+| `app/` | Tauri 2 tray app: engine control, **command editor**, **addon installer**, **the companion itself** (`app/src/companion.rs`). |
 | `link/` | wire protocol, pairing token, admission gate. Postcard for native, JSON for browsers. |
 | `ears/` | per-window audio capture and all detection. Cannot reach input. |
 | `relay/` | LAN server: serves the companion page and phone websocket. `host::Hosted` holds the admission rules. |
-| `rig/` | ties capture to relay. The fishing CLI. The only place a press becomes a keystroke. |
+| `rig/` | `companion::Companion` -- taps plus relay plus press routing, used by both the CLI and the app. `deck` turns `pad = true` commands into action slots. Also the fishing CLI. |
 | `hub/` | optional public fan-out service. Unit-tested, never deployed. |
 
 ## Part one: the fishing companion (works, don't break it)
@@ -81,7 +88,36 @@ and it went unnoticed for an hour, because nobody measured.
   cast BetterFishing mutes music so it should be far lower; never measured separately.
 - **Bags full and lure alerts.** Addon emits them, decoder reads them, `rig` maps them, and no
   phone has ever received one.
+- **Fishing from inside the app.** The deck was driven end to end against the running app (pair,
+  press, `actions::trigger` fires the named command). The *detection* half of the app companion
+  has not been run against a live game window -- it is the same `Companion` the CLI uses, with
+  the same taps and the same pipeline, but nobody has watched a bite arrive through the app yet.
+- **The window cast/reel buttons in the app.** `choose` is unit-tested and `tap` is the CLI's
+  own code, but no press has gone through the app into a game window.
 - **The hub.** 9 unit tests, no integration test, never run against a real phone.
+
+## Part one and a half: the phone deck
+
+A command with `pad = true` gets a button on the phone. `deck::pads` numbers those commands
+0, 1, 2... and `deck::rig` publishes them as one extra `RigInfo` with `kind: Deck` and the
+reserved id `RigId::MAX`, so no protocol message had to be invented: the phone already knew how
+to read a rig's action slots. Pressing a pad runs `actions::trigger` with the engine's own
+`Shared` when the engine is up, which is what makes it the *same* command voice would run --
+including `stop_others`. `rig/tests/deck.rs` drives this over a real websocket.
+
+The phone's cast and reel buttons resolve through `Deck { cast, reel }` in `app.json`: a command
+name, matched case-insensitively against `display_name()`. With no name set they fall back to
+`companion::tap` -- one key, after `raise(pid)` on macOS, or through `BackgroundSink` on Windows.
+That fallback is the path that was measured working for fishing, so it stays the default.
+
+`app/src/companion.rs` owns the mapping (`choose`) and the alert wording (`told`), both
+unit-tested. `WARCRY_HOME` overrides the app's config directory, which is how to run the app
+against a scratch profile without touching your own.
+
+The probe thread calls `companion::rescan` every 2s: if the set of World of Warcraft pids has
+changed, the companion is torn down and restarted so a client started after the app still gets
+heard. Restart is synchronous (`halt` then `start`) because the old relay must release the port
+before the new one binds.
 
 ## Part two: the desktop app
 
@@ -123,6 +159,9 @@ and is gitignored; a PowerShell version would help on Windows.
 
 ## Windows: what the next session needs to do
 
+0. The app now hosts the companion, so everything below applies to the app as much as the CLI.
+   `companion::tap` already prefers `BackgroundSink` on Windows, so a phone press into one client
+   should not steal focus from the others once capture works.
 1. **`ears/src/capture/windows.rs`.** Mirror the macOS backend: `pub fn open(pid: u32, tx:
    Sender<Vec<f32>>) -> Result<Tap>` with teardown in `Drop`. Use `ActivateAudioInterfaceAsync`
    with `AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK` and `AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS
@@ -145,7 +184,12 @@ and is gitignored; a PowerShell version would help on Windows.
 - **`cmake` is required** to build the app at all — `whisper-rs-sys` needs it. On Windows,
   winget or the VS build tools.
 - **`rtk` wrapper**: a hook rewrites shell commands, swallows `cargo test` summaries and mangles
-  multi-file `grep`. Use `rtk proxy cargo test ...` to see real output.
+  multi-file `grep`. Use `rtk proxy cargo test ...` to see real output -- and note that a plain
+  `cargo clippy` through the hook can report "No issues found" while clippy is failing.
+- **CI stops at the first crate that fails to lint.** A clean lint of the relay said nothing
+  about rig, hub or app, which had eight more errors between them. Always lint `--workspace`.
+- **`.gitattributes` keeps the served assets LF.** Without it, git hands Windows CRLF copies of
+  `relay/ui/*` and anything that reasons about the HTTP body by splitting on a blank line breaks.
 - **Postcard is not self-describing**, so serde internally-tagged enums (`#[serde(tag = "...")]`)
   silently fail to decode. All protocol enums are externally tagged. Do not add a tag.
 - **macOS permissions**: `enigo` needs Accessibility and `osascript` needs Automation, both
@@ -155,7 +199,7 @@ and is gitignored; a PowerShell version would help on Windows.
 
 ### Never block the main thread, and know how to find it when you do
 
-Three separate hangs came from blocking work on a thread that could not afford it. When
+Four separate hangs came from blocking work on a thread that could not afford it. When
 something freezes, **`sample <pid> 3` first** — it found the last one in thirty seconds after
 two rounds of guessing.
 
@@ -168,6 +212,11 @@ two rounds of guessing.
   webview could not even paint. The engine is now dropped on a background thread.
 - `warcry::window::focus()` polls `active()` up to 30 times and each call enumerates every
   window via AppleScript — up to 15s per keypress. `rig::raise()` does one `osascript` in 0.19s.
+- `snapshot` held `engine`'s lock for its whole body while building the companion view, whose
+  rigs closure wants that same lock to read the engine's profile. The main thread deadlocked
+  holding it, and the phone's websocket thread then blocked in `Hosted::welcome`, so the symptom
+  was "the page loads but nothing ever answers". Read what you need out of a lock and drop the
+  guard; `companion::current` additionally uses `try_lock` and falls back to the profile on disk.
 - **Never swallow a shell-out error.** `unwrap_or_default()` hid an `osascript` failure and
   turned `--focus` into a silent no-op for an hour.
 

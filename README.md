@@ -45,6 +45,22 @@ Warcry lives in your system tray. Click the tray icon to open the window, or rig
 
 **First run:** click **Create fishing profile**, pick your microphone, and press **Start**. The speech model (142 MB) downloads automatically. Use **Test** to try phrases without speaking, and **Edit** to open the profile in your text editor; saved changes apply immediately.
 
+### Your phone as a button deck
+
+Open the **Phone** tab and press **Turn on**. Warcry serves a small page from your own
+computer; point your phone's camera at the QR code to open it. No account, no cloud, nothing
+leaves your network — the page talks straight to your machine over its local address, and the
+link carries a pairing token so only a phone you showed the code to can press anything.
+
+Every command you tick as a phone button gets a key on the deck, and pressing it runs exactly
+what saying it would. Tick them in the **Commands** tab, or with **Give it a button on my
+phone** in the editor.
+
+If World of Warcraft is running with the [Warcry beacon addon](addon/) installed, the deck also
+gets a cast and reel button per game window, and your phone chimes when a bobber bites — the
+addon tells Warcry a cast started, Warcry listens for the splash, and *you* press reel. It
+never fishes for you.
+
 ### Command-line version
 
 Each release also includes a `warcry-cli-…` archive with the `warcry` command for scripting and power users. Or build it with `cargo install --git https://github.com/Stackout/warcry warcry`.

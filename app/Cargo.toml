@@ -11,6 +11,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 warcry = { path = ".." }
+warcry-ears = { path = "../ears" }
+warcry-link = { path = "../link" }
+warcry-relay = { path = "../relay" }
+warcry-rig = { path = "../rig" }
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
