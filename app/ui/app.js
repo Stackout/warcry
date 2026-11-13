@@ -20,6 +20,21 @@ const toast = (message) => {
   toast.timer = setTimeout(() => { box.hidden = true }, 5000)
 }
 
+const ask = (title, body, yes) => new Promise((answer) => {
+  const box = $('ask')
+  $('ask-title').textContent = title
+  $('ask-body').textContent = body
+  $('ask-yes').textContent = yes || 'Delete'
+  const close = (said) => {
+    answer(said)
+    box.close()
+  }
+  $('ask-yes').onclick = () => close(true)
+  $('ask-no').onclick = () => close(false)
+  box.onclose = () => answer(false)
+  box.showModal()
+})
+
 const call = (command, args) => invoke(command, args).catch((error) => {
   toast(String(error))
   throw error
@@ -195,18 +210,10 @@ const saveDraft = () => {
     .catch((error) => ($('d-error').textContent = String(error)))
 }
 
-const removeCommand = (button, c) => {
-  if (button.dataset.sure !== 'yes') {
-    button.dataset.sure = 'yes'
-    button.textContent = 'Really delete?'
-    setTimeout(() => {
-      button.dataset.sure = ''
-      button.textContent = 'Delete'
-    }, 4000)
-    return
-  }
-  call('remove_command', { index: c.index }).then(refresh)
-}
+const removeCommand = (c) => ask(
+  'Delete this command?',
+  `"${c.name}" will go from this profile, along with everything you can say to run it.`,
+).then((yes) => yes && call('remove_command', { index: c.index }).then(refresh))
 
 const haystack = (c) => [c.name, c.draft.keys, c.hotkey, ...c.phrases]
   .filter(Boolean)
@@ -235,10 +242,7 @@ const commandRow = (c) => el('tr', { hay: haystack(c) },
     c.editable
       ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
       : el('button', { disabled: true, title: 'too detailed to edit here, open the file instead', textContent: 'Edit' }),
-    el('button', {
-      textContent: 'Delete',
-      onclick: (event) => removeCommand(event.currentTarget, c),
-    }),
+    el('button', { textContent: 'Delete', onclick: () => removeCommand(c) }),
   ),
 )
 
@@ -504,21 +508,11 @@ $('p-create').addEventListener('click', () => profileCall('create_profile', {
 $('p-rename-go').addEventListener('click', () => profileCall('rename_profile', {
   name: $('p-rename').value,
 }).then(() => ($('p-rename').value = '')))
-$('p-delete').addEventListener('click', (event) => {
-  const button = event.currentTarget
-  if (button.dataset.sure !== 'yes') {
-    button.dataset.sure = 'yes'
-    button.textContent = 'Really delete it?'
-    setTimeout(() => {
-      button.dataset.sure = ''
-      button.textContent = 'Delete this profile'
-    }, 4000)
-    return
-  }
-  button.dataset.sure = ''
-  button.textContent = 'Delete this profile'
-  profileCall('delete_profile')
-})
+$('p-delete').addEventListener('click', () => ask(
+  'Delete this profile?',
+  `${basename(state.profile || '')} and every command in it will be removed from your Warcry folder. This cannot be undone.`,
+  'Delete the profile',
+).then((yes) => yes && profileCall('delete_profile')))
 $('welcome-default').addEventListener('click', () => profileCall('create_profile', {
   name: 'default',
   example: 'default',
@@ -641,6 +635,8 @@ const CONDITIONS = [
 
 const hintBox = () => $('m-hints')
 
+let writing = null
+
 let hints = { items: [], at: 0, start: 0, end: 0 }
 
 const wordAt = (text, caret) => {
@@ -648,7 +644,9 @@ const wordAt = (text, caret) => {
   const open = before.lastIndexOf('[')
   const shut = before.lastIndexOf(']')
   const inside = open > shut
-  const edge = inside ? Math.max(open, before.lastIndexOf(','), before.lastIndexOf(' ')) : Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n'))
+  const edge = inside
+    ? Math.max(open, before.lastIndexOf(','), before.lastIndexOf(' '))
+    : Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n'))
   return { word: before.slice(edge + 1), start: edge + 1, inside }
 }
 
@@ -662,39 +660,56 @@ const suggestionsFor = (word, inside) => {
   return opens.length || needle.length < 3 ? opens : anywhere()
 }
 
+const placeHints = () => {
+  const box = hintBox()
+  const spot = writing.getBoundingClientRect()
+  box.style.left = `${spot.left}px`
+  box.style.width = `${Math.max(spot.width, 420)}px`
+  box.style.top = `${spot.bottom + 2}px`
+}
+
 const drawHints = () => {
   const box = hintBox()
   box.hidden = !hints.items.length
   box.replaceChildren(...hints.items.map(([text, about], i) => el('div', {
     className: i === hints.at ? 'hit on' : 'hit',
-    onmousedown: (event) => { event.preventDefault(); takeHint(i) },
+    onmousedown: (event) => {
+      event.preventDefault()
+      takeHint(i)
+    },
   }, el('code', { textContent: text }), el('span', { textContent: about }))))
+  if (hints.items.length) placeHints()
   const picked = box.children[hints.at]
   if (picked) picked.scrollIntoView({ block: 'nearest' })
-}
-
-const offerHints = () => {
-  const body = $('m-body')
-  const { word, start, inside } = wordAt(body.value, body.selectionStart)
-  hints = { items: suggestionsFor(word, inside).slice(0, 8), at: 0, start, end: body.selectionStart }
-  drawHints()
-}
-
-const takeHint = (index) => {
-  const body = $('m-body')
-  const [text] = hints.items[index] || []
-  if (!text) return
-  body.value = body.value.slice(0, hints.start) + text + body.value.slice(hints.end)
-  const caret = hints.start + text.length
-  body.setSelectionRange(caret, caret)
-  hideHints()
-  countBody()
-  body.focus()
 }
 
 const hideHints = () => {
   hints = { items: [], at: 0, start: 0, end: 0 }
   hintBox().hidden = true
+}
+
+const offerHints = () => {
+  if (!writing) return hideHints()
+  const { word, start, inside } = wordAt(writing.value, writing.selectionStart)
+  hints = {
+    items: suggestionsFor(word, inside).slice(0, 8),
+    at: 0,
+    start,
+    end: writing.selectionStart,
+  }
+  drawHints()
+}
+
+const takeHint = (index) => {
+  const [text] = hints.items[index] || []
+  if (!text || !writing) return
+  const box = writing
+  box.value = box.value.slice(0, hints.start) + text + box.value.slice(hints.end)
+  const caret = hints.start + text.length
+  hideHints()
+  box.focus()
+  box.setSelectionRange(caret, caret)
+  box.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 const MOVES = {
@@ -716,61 +731,117 @@ const onHintKey = (event) => {
   takeHint(hints.at)
 }
 
-const countBody = () => {
-  const used = $('m-body').value.length
-  $('m-count').textContent = `${used} / 255`
-  $('m-count').className = used > 255 ? 'missing' : 'meta'
-}
-
-let draftAt = null
-
-const copyMacro = (button, text) => navigator.clipboard.writeText(text)
+const copyMacro = (text) => navigator.clipboard.writeText(text)
   .then(() => toast('Copied. Paste it into the game with /macro.'))
   .catch(() => toast('Could not reach the clipboard'))
 
-const macroRow = (m, actions) => el('tr', {},
-  el('td', {}, el('strong', { textContent: m.name })),
-  el('td', {}, el('pre', { className: 'macro-body', textContent: m.body })),
-  el('td', { className: 'row-actions' }, ...actions),
-)
+const grow = (box) => {
+  box.style.height = 'auto'
+  box.style.height = `${Math.max(box.scrollHeight, 34)}px`
+}
+
+const overLong = (draft) => [
+  draft.name.length > 16 && `the game allows 16 characters in a name, this is ${draft.name.length}`,
+  draft.body.length > 255 && `the game allows 255 characters in a macro, this is ${draft.body.length}`,
+].find(Boolean)
 
 const renderGameMacros = (list) => {
   $('macro-tally').textContent = list.length ? `${list.length}` : ''
   $('macro-empty').hidden = list.length > 0
-  $('macro-rows').replaceChildren(...list.map((m) => macroRow(m, [
-    el('button', { textContent: 'Copy', onclick: (e) => copyMacro(e.currentTarget, m.body) }),
-    el('button', { textContent: 'Edit here', onclick: () => editDraft(null, m) }),
-  ])))
+  $('macro-rows').replaceChildren(...list.map((m) => el('tr', {},
+    el('td', {}, el('strong', { textContent: m.name })),
+    el('td', {}, el('pre', { className: 'macro-body', textContent: m.body })),
+    el('td', { className: 'row-actions' },
+      el('button', { textContent: 'Copy', onclick: () => copyMacro(m.body) }),
+      el('button', { textContent: 'Copy here', onclick: () => addDraft(m) }),
+    ),
+  )))
 }
 
-const editDraft = (index, draft) => {
-  draftAt = index
-  $('m-name').value = (draft.name || '').slice(0, 16)
-  $('m-body').value = draft.body || ''
-  $('m-error').textContent = ''
-  countBody()
-  $('m-name').focus()
+let fresh = null
+
+const commitRow = (index, read, note) => {
+  const draft = read()
+  const tooLong = overLong(draft)
+  note.textContent = tooLong || ''
+  if (tooLong) return
+  if (!draft.name.trim()) {
+    note.textContent = index === null ? 'name it to keep it' : 'a macro needs a name'
+    return
+  }
+  invoke('save_macro', { index, draft })
+    .then(() => {
+      fresh = null
+      loadDrafts()
+    })
+    .catch((error) => (note.textContent = String(error)))
+}
+
+const draftRow = (m, index) => {
+  const note = el('span', { className: 'cell-note' })
+  const name = el('input', {
+    className: 'cell-name', value: m.name, maxLength: 16, spellcheck: false, autocomplete: 'off',
+    placeholder: 'name',
+  })
+  const body = el('textarea', {
+    className: 'cell-body', value: m.body, spellcheck: false, rows: 1,
+    placeholder: '/cast [@party1,help,nodead] Healing Touch',
+  })
+  const read = () => ({ name: name.value.trim(), body: body.value })
+  const commit = () => commitRow(index, read, note)
+  name.addEventListener('change', commit)
+  body.addEventListener('change', commit)
+  body.addEventListener('input', () => {
+    grow(body)
+    offerHints()
+  })
+  body.addEventListener('keydown', onHintKey)
+  body.addEventListener('focus', () => {
+    writing = body
+    grow(body)
+  })
+  body.addEventListener('blur', hideHints)
+  queueMicrotask(() => grow(body))
+  return el('tr', {},
+    el('td', {}, name),
+    el('td', {}, body, note),
+    el('td', { className: 'row-actions' },
+      el('button', { textContent: 'Copy', onclick: () => copyMacro(body.value) }),
+      index === null
+        ? el('button', { textContent: 'Discard', onclick: () => { fresh = null; loadDrafts() } })
+        : el('button', {
+          textContent: 'Delete',
+          onclick: () => ask('Delete this macro?', `"${m.name}" will go from your Warcry macros. The copy in the game is untouched.`)
+            .then((yes) => yes && call('remove_macro', { index }).then(loadDrafts)),
+        }),
+    ),
+  )
 }
 
 const renderDrafts = (list) => {
+  const rows = list.map(draftRow)
+  const pending = fresh ? [draftRow(fresh, null)] : []
   $('draft-tally').textContent = list.length ? `${list.length}` : ''
-  $('drafts-empty').hidden = list.length > 0
-  $('drafts').replaceChildren(...list.map((m, index) => macroRow(m, [
-    el('button', { textContent: 'Copy', onclick: (e) => copyMacro(e.currentTarget, m.body) }),
-    el('button', { textContent: 'Edit', onclick: () => editDraft(index, m) }),
-    el('button', { textContent: 'Delete', onclick: () => call('remove_macro', { index }).then(loadDrafts) }),
-  ])))
+  $('drafts-empty').hidden = list.length + pending.length > 0
+  $('drafts').replaceChildren(...rows, ...pending)
+  const last = pending.length && $('drafts').lastElementChild
+  if (last) last.querySelector('.cell-name').focus()
 }
 
 const loadDrafts = () => call('macro_drafts').then(renderDrafts)
 
-const whoLabel = (c) => [c.name, c.realm, `${c.flavor} · ${c.account}`].filter(Boolean).join(' · ')
+const addDraft = (m) => {
+  fresh = { name: (m.name || '').slice(0, 16), body: m.body || '' }
+  loadDrafts()
+}
+
+const whoLabel = (c) => [c.name, c.realm, `${c.flavor} \u00b7 ${c.account}`].filter(Boolean).join(' \u00b7 ')
 
 const loadCharacters = () => call('wow_characters').then((found) => {
   const list = found || []
   const pick = $('macro-who')
   const keep = pick.value
-  fill(pick, list.map((c) => [c.id, `${whoLabel(c)} — ${c.macros} macro${c.macros === 1 ? '' : 's'}`]), keep)
+  fill(pick, list.map((c) => [c.id, `${whoLabel(c)} \u2014 ${c.macros} macro${c.macros === 1 ? '' : 's'}`]), keep)
   if (!list.length) return renderGameMacros([])
   if (!list.some((c) => c.id === keep)) pick.value = list[0].id
   return loadGameMacros()
@@ -781,23 +852,11 @@ const loadGameMacros = () => {
   return id ? call('wow_macros', { id }).then(renderGameMacros) : renderGameMacros([])
 }
 
-const saveMacro = () => {
-  const draft = { name: $('m-name').value.trim(), body: $('m-body').value }
-  invoke('save_macro', { index: draftAt, draft })
-    .then(() => { draftAt = null; $('m-name').value = ''; $('m-body').value = ''; countBody() })
-    .then(loadDrafts)
-    .catch((error) => ($('m-error').textContent = String(error)))
-}
-
-$('m-body').addEventListener('input', () => { countBody(); offerHints() })
-$('m-body').addEventListener('keydown', onHintKey)
-$('m-body').addEventListener('blur', hideHints)
-$('m-save').addEventListener('click', saveMacro)
-$('m-new').addEventListener('click', () => editDraft(null, {}))
+$('m-new').addEventListener('click', () => addDraft({}))
 $('macro-who').addEventListener('change', loadGameMacros)
+window.addEventListener('scroll', hideHints, true)
 loadCharacters()
 loadDrafts()
-countBody()
 
 renderAddon()
 loadTargets()

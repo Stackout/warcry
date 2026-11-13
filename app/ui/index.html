@@ -197,23 +197,13 @@
 
       <section class="group">
         <h2>My macros <small id="draft-tally" class="meta"></small></h2>
-        <div class="macro-editor">
-          <label>Name<input id="m-name" maxlength="16" placeholder="wc_heal" autocomplete="off"></label>
-          <label class="tall">Body<span class="writer">
-            <textarea id="m-body" rows="4" spellcheck="false" autocomplete="off"
-              placeholder="/cast [@party1,help,nodead] Healing Touch"></textarea>
-            <div id="m-hints" class="hints" hidden></div>
-          </span></label>
-          <p class="hint">Type <code>/</code> for commands or <code>[</code> for conditions and Warcry
-            suggests the rest. Enter or Tab accepts, Esc dismisses.</p>
-          <div class="editor-row">
-            <button id="m-save" class="primary">Save</button>
-            <button id="m-new" class="ghost">New</button>
-            <span id="m-count" class="meta"></span>
-            <span id="m-error" class="missing"></span>
-          </div>
+        <div class="bar-row inset">
+          <button id="m-new" class="primary">New macro</button>
+          <span class="hint">Click a name or a body to edit it. Type <code>/</code> for commands or
+            <code>[</code> for conditions and Warcry suggests the rest; Enter or Tab accepts, Esc
+            dismisses. Changes save when you click away.</span>
         </div>
-        <table class="commands">
+        <table class="commands macros">
           <thead><tr><th>Name</th><th>Macro</th><th></th></tr></thead>
           <tbody id="drafts"></tbody>
         </table>
@@ -318,6 +308,19 @@
     </div>
   </div>
 
+  <dialog id="ask" class="ask">
+    <div class="ask-head">
+      <img src="logo.png" alt="">
+      <h3 id="ask-title"></h3>
+    </div>
+    <p id="ask-body"></p>
+    <div class="ask-row">
+      <button id="ask-no" class="ghost">Keep it</button>
+      <button id="ask-yes" class="danger">Delete</button>
+    </div>
+  </dialog>
+
+  <div id="m-hints" class="hints" hidden></div>
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>
 </body>
