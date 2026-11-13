@@ -239,7 +239,7 @@ actions = [{ do = "press", key = "f8" }]
 
 [[command]]
 name = "health pot"
-phrase = "[health;healing;red] potion"
+phrase = "red pot[ion;];[health;healing] potion"
 pad = true
 actions = [{ do = "press", key = "f9" }]
 
