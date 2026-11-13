@@ -103,7 +103,14 @@ button, input, select { font: inherit; color: inherit; }
 .target .found { color: var(--ok); }
 .target .missing { color: var(--amber); }
 
-select, input[type="text"], input[type="number"], input[type="search"], .try input, .editor input {
+select,
+input[type="text"],
+input[type="number"],
+input[type="search"],
+.try input,
+.sheet input:not([type="checkbox"]),
+.rw .ctl input:not([type="checkbox"]),
+.bar-row input {
   background: var(--sunken);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -276,36 +283,42 @@ label.rw { cursor: pointer; }
 
 [hidden] { display: none !important; }
 
-.editor {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--raised);
+.sheet[open] {
+  width: 420px; max-width: calc(100vw - 32px);
+  height: fit-content; max-height: calc(100vh - 56px); overflow-y: auto;
+  padding: 16px; color: var(--text);
+  background: var(--raised); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  display: grid; gap: 8px; align-content: start;
 }
-.editor label { display: grid; grid-template-columns: 76px 1fr; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
-.editor label.check { grid-template-columns: auto 1fr; justify-content: start; cursor: pointer; }
-.editor label.check input { width: 15px; height: 15px; accent-color: var(--ember); }
-.editor .hint { color: var(--dim); margin: 0; font-size: 11px; line-height: 1.5; }
-.editor code { background: var(--sunken); padding: 1px 4px; border-radius: 3px; }
-.editor-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.sheet::backdrop { background: rgba(8, 6, 12, 0.62); }
+.sheet .ask-head { margin-bottom: 4px; }
+.sheet label { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.sheet label.check { grid-template-columns: auto 1fr; justify-content: start; cursor: pointer; }
+.sheet label.check input { width: 15px; height: 15px; accent-color: var(--ember); }
+.sheet .hint { color: var(--dim); margin: 0; font-size: 11px; line-height: 1.5; }
+.sheet code { background: var(--sunken); padding: 1px 4px; border-radius: 3px; }
+.sheet input { width: 100%; }
+.editor-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; justify-content: flex-end; }
+.editor-row .missing { margin-right: auto; }
 
-.keyrow { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.keyrow { display: flex; gap: 6px; align-items: stretch; min-width: 0; }
 .keyfield {
-  flex: 1; min-height: 27px; min-width: 0;
+  flex: 1; min-height: 26px; min-width: 0;
   display: flex; align-items: center; gap: 6px;
   padding: 3px 8px; text-align: left;
   background: var(--sunken); border: 1px solid var(--line); color: var(--muted);
+  border-radius: var(--radius);
 }
 .keyfield em { font-style: normal; font-size: 11.5px; color: var(--dim); }
+.keyfield em.waiting { color: var(--amber); }
 .keyfield:hover { border-color: #7a4d1d; }
-.keyfield.arming { border-color: var(--amber); }
-.keyfield.arming em { color: var(--amber); }
+.keyfield.arming { border-color: var(--amber); animation: arming 1.1s ease-in-out infinite alternate; }
+@keyframes arming { to { box-shadow: 0 0 0 3px rgba(255, 194, 77, 0.14); } }
 .keyclear {
-  width: 25px; height: 25px; flex: none; line-height: 1;
+  width: 24px; flex: none; line-height: 1; padding: 0;
   background: var(--raised-2); border: 1px solid var(--line); color: var(--muted);
+  border-radius: var(--radius);
 }
 .keyclear:hover { color: var(--text); }
 
@@ -352,7 +365,7 @@ table.macros td:first-child { width: 170px; }
 .hints .hit.on span { color: var(--text); }
 
 .ask {
-  width: 380px; padding: 18px; color: var(--text);
+  width: 380px; height: fit-content; padding: 18px; color: var(--text);
   background: var(--raised); border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
@@ -416,6 +429,11 @@ table.commands {
   border-radius: var(--radius);
   font-size: 12.5px;
 }
+table.commands.plain thead { display: none; }
+table.commands td .keyrow { width: 100%; }
+table.commands td .keyfield { min-height: 24px; padding: 2px 6px; }
+table.commands td .keyclear { width: 22px; }
+
 table.commands th {
   text-align: left;
   font: 600 10px/1 inherit;

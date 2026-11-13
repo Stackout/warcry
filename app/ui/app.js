@@ -104,10 +104,11 @@ const CAP_GLYPHS = {
   space: 'Space', enter: '↩', tab: '⇥', escape: 'Esc',
   backspace: '⌫', delete: 'Del', up: '↑', down: '↓',
   left: '←', right: '→', pageup: 'PgUp', pagedown: 'PgDn',
+  home: 'Home', end: 'End',
 }
 
 const capLabel = (part) => CAP_LABELS[part] || CAP_GLYPHS[part]
-  || (part.length === 1 ? part.toUpperCase() : part)
+  || (part.length <= 3 ? part.toUpperCase() : part)
 
 const keycaps = (text, title, extra) => el('span', {
   className: `caps${extra ? ` ${extra}` : ''}`,
@@ -147,37 +148,49 @@ const comboOf = (event) => {
 
 const repaints = []
 
-const armCapture = (id, hint) => {
-  const input = $(id)
-  if (!input) return
-  input.hidden = true
+const keyButton = (start, hint, onSet) => {
   const slot = el('span', { className: 'slot' })
   const field = el('button', { type: 'button', className: 'keyfield' }, slot)
-  const wipe = el('button', { type: 'button', className: 'keyclear', textContent: '\u00d7', title: 'clear' })
+  const wipe = el('button', { type: 'button', className: 'keyclear', textContent: '×', title: 'clear' })
+  let value = start || ''
   const paint = () => {
     field.classList.remove('arming')
-    slot.replaceChildren(input.value ? keycaps(input.value) : el('em', { textContent: hint }))
-    wipe.hidden = !input.value
+    slot.replaceChildren(value ? keycaps(value) : el('em', { textContent: hint }))
+    wipe.hidden = !value
   }
-  const set = (value) => {
-    input.value = value
+  const set = (next) => {
+    const changed = next !== value
+    value = next
     paint()
+    if (changed) onSet(next)
   }
   const onKey = (event) => {
     event.preventDefault()
     event.stopPropagation()
     document.removeEventListener('keydown', onKey, true)
-    set((event.code === 'Escape' ? null : comboOf(event)) || input.value)
+    set((event.code === 'Escape' ? null : comboOf(event)) || value)
   }
   field.addEventListener('click', () => {
     field.classList.add('arming')
-    slot.replaceChildren(el('em', { textContent: 'press any key\u2026' }))
+    slot.replaceChildren(el('em', { className: 'waiting', textContent: 'press a key…' }))
     document.addEventListener('keydown', onKey, true)
   })
   wipe.addEventListener('click', () => set(''))
-  input.after(el('span', { className: 'keyrow' }, field, wipe))
-  repaints.push(paint)
   paint()
+  return el('span', { className: 'keyrow' }, field, wipe)
+}
+
+const armCapture = (id, hint) => {
+  const input = $(id)
+  if (!input) return
+  input.hidden = true
+  let shown = keyButton(input.value, hint, (value) => (input.value = value))
+  input.after(shown)
+  repaints.push(() => {
+    const next = keyButton(input.value, hint, (value) => (input.value = value))
+    shown.replaceWith(next)
+    shown = next
+  })
 }
 
 const showEditor = (index, draft) => {
@@ -186,16 +199,15 @@ const showEditor = (index, draft) => {
   $('d-active').checked = !!draft.always_active
   $('d-pad').checked = !!draft.pad
   repaints.forEach((paint) => paint())
+  $('d-head').textContent = index === null ? 'New command' : `Edit ${draft.name || 'this command'}`
   $('d-error').textContent = ''
-  $('editor').hidden = false
-  $('add-command').hidden = true
+  $('editor').showModal()
   $('d-name').focus()
 }
 
 const hideEditor = () => {
   editing = null
-  $('editor').hidden = true
-  $('add-command').hidden = false
+  $('editor').close()
 }
 
 const saveDraft = () => {
@@ -226,12 +238,23 @@ const phraseCell = (c) => el('td', { className: 'say' },
     ? el('span', { className: 'dim', textContent: `+${c.more + Math.max(0, c.phrases.length - 2)} more` })
     : '')
 
+const setKey = (c, field, value) => call('edit_command', {
+  index: c.index,
+  draft: { ...c.draft, [field]: value },
+}).then(refresh)
+
+const keyCell = (c, field, hint) => el('td', {}, c.editable
+  ? keyButton(c.draft[field], hint, (value) => setKey(c, field, value))
+  : (c.draft[field]
+    ? keycaps(c.draft[field], 'open the file to change this')
+    : el('span', { className: 'dim', textContent: '—' })))
+
 const commandRow = (c) => el('tr', { hay: haystack(c) },
   el('td', {}, el('strong', { textContent: c.name }),
     c.actions > 1 ? el('span', { className: 'dim', textContent: ` ${c.actions} actions` }) : ''),
   phraseCell(c),
-  el('td', {}, c.draft.keys ? keycaps(c.draft.keys, 'the key this sends into the game') : el('span', { className: 'dim', textContent: '—' })),
-  el('td', {}, c.hotkey ? keycaps(c.hotkey, 'global hotkey', 'hot') : el('span', { className: 'dim', textContent: '—' })),
+  keyCell(c, 'keys', 'set a key'),
+  keyCell(c, 'hotkey', 'none'),
   el('td', { className: 'row-actions' },
     el('button', {
       className: c.pad ? 'on' : '',
@@ -746,7 +769,9 @@ const overLong = (draft) => [
 ].find(Boolean)
 
 const renderGameMacros = (list) => {
-  $('macro-tally').textContent = list.length ? `${list.length}` : ''
+  const who = $('macro-who').selectedOptions[0]
+  const name = who ? who.textContent.split(' · ')[0] : 'this character'
+  $('macro-head').textContent = `${name}'s macros${list.length ? ` · ${list.length}` : ''}`
   $('macro-empty').hidden = list.length > 0
   $('macro-rows').replaceChildren(...list.map((m) => el('tr', {},
     el('td', {}, el('strong', { textContent: m.name })),
@@ -821,7 +846,7 @@ const draftRow = (m, index) => {
 const renderDrafts = (list) => {
   const rows = list.map(draftRow)
   const pending = fresh ? [draftRow(fresh, null)] : []
-  $('draft-tally').textContent = list.length ? `${list.length}` : ''
+  $('draft-head').textContent = `My macros${list.length ? ` · ${list.length}` : ''}`
   $('drafts-empty').hidden = list.length + pending.length > 0
   $('drafts').replaceChildren(...rows, ...pending)
   const last = pending.length && $('drafts').lastElementChild

@@ -82,24 +82,6 @@
       </div>
 
       <div class="tab" id="tab-commands" hidden>
-        <div class="editor" id="editor" hidden>
-          <label>Name<input id="d-name" placeholder="heal pet" autocomplete="off"></label>
-          <label>Say<input id="d-phrase" placeholder="heal [my;the;] pet" autocomplete="off"></label>
-          <p class="hint">Alternatives go in brackets, separated by <code>;</code>, and an empty
-            one means optional: <code>heal [my;the;] pet</code> accepts "heal my pet", "heal the
-            pet" and "heal pet". Separate whole phrasings with <code>;</code> outside brackets.</p>
-          <label>Press<input id="d-keys" placeholder="click, then press the key" autocomplete="off"></label>
-          <label>Hotkey<input id="d-hotkey" placeholder="optional, click then press" autocomplete="off"></label>
-          <p class="hint">Click a key field and press the combination you want — no typing. Esc cancels.
-            Keys go to the target window chosen above.</p>
-          <label class="check"><input type="checkbox" id="d-active"> Works even while not listening</label>
-          <label class="check"><input type="checkbox" id="d-pad"> Give it a button on my phone</label>
-          <div class="editor-row">
-            <button id="d-save" class="primary">Save</button>
-            <button id="d-cancel" class="ghost">Cancel</button>
-            <span id="d-error" class="missing"></span>
-          </div>
-        </div>
         <div class="bar-row">
           <button id="add-command" class="primary">Add a command</button>
           <input id="command-search" type="search" placeholder="Search names, phrases or keys" autocomplete="off">
@@ -187,24 +169,22 @@
       </section>
 
       <section class="group">
-        <h2>In the game now <small id="macro-tally" class="meta"></small></h2>
-        <table class="commands">
-          <thead><tr><th>Name</th><th>Macro</th><th></th></tr></thead>
+        <h2><span id="macro-head">Saved on this character</span></h2>
+        <table class="commands plain">
           <tbody id="macro-rows"></tbody>
         </table>
         <p id="macro-empty" class="note" hidden>No macros saved for this character.</p>
       </section>
 
       <section class="group">
-        <h2>My macros <small id="draft-tally" class="meta"></small></h2>
+        <h2><span id="draft-head">My macros</span></h2>
         <div class="bar-row inset">
           <button id="m-new" class="primary">New macro</button>
           <span class="hint">Click a name or a body to edit it. Type <code>/</code> for commands or
             <code>[</code> for conditions and Warcry suggests the rest; Enter or Tab accepts, Esc
             dismisses. Changes save when you click away.</span>
         </div>
-        <table class="commands macros">
-          <thead><tr><th>Name</th><th>Macro</th><th></th></tr></thead>
+        <table class="commands macros plain">
           <tbody id="drafts"></tbody>
         </table>
         <p id="drafts-empty" class="note" hidden>Nothing written yet.</p>
@@ -307,6 +287,26 @@
 
     </div>
   </div>
+
+  <dialog id="editor" class="sheet">
+    <div class="ask-head"><img src="logo.png" alt=""><h3 id="d-head">Edit a command</h3></div>
+    <label>Name<input id="d-name" placeholder="heal pet" autocomplete="off"></label>
+    <label>Say<input id="d-phrase" placeholder="heal [my;the;] pet" autocomplete="off"></label>
+    <p class="hint">Alternatives go in brackets, separated by <code>;</code>, and an empty
+    one means optional: <code>heal [my;the;] pet</code> accepts "heal my pet", "heal the
+    pet" and "heal pet". Separate whole phrasings with <code>;</code> outside brackets.</p>
+    <label>Press<input id="d-keys" placeholder="click, then press the key" autocomplete="off"></label>
+    <label>Hotkey<input id="d-hotkey" placeholder="optional, click then press" autocomplete="off"></label>
+    <p class="hint">Click a key field and press the combination you want — no typing. Esc cancels.
+    Keys go to the target window chosen above.</p>
+    <label class="check"><input type="checkbox" id="d-active"> Works even while not listening</label>
+    <label class="check"><input type="checkbox" id="d-pad"> Give it a button on my phone</label>
+    <div class="editor-row">
+    <button id="d-save" class="primary">Save</button>
+    <button id="d-cancel" class="ghost">Cancel</button>
+    <span id="d-error" class="missing"></span>
+    </div>
+  </dialog>
 
   <dialog id="ask" class="ask">
     <div class="ask-head">
