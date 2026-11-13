@@ -87,6 +87,7 @@ pub struct Companion {
     quit: Arc<AtomicBool>,
     pub url: String,
     pub deaf: Vec<u32>,
+    threads: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl Companion {
@@ -103,8 +104,8 @@ impl Companion {
         let relay = Arc::new(serve(&settings, rigs.clone())?);
         let quit = Arc::new(AtomicBool::new(false));
         let also = settings.hub.take().map(|hub| hub(rigs, relay.presser()));
-        pressing(relay.clone(), quit.clone(), fire, watch.clone())?;
-        hearing(
+        let presser = pressing(relay.clone(), quit.clone(), fire, watch.clone())?;
+        let hearer = hearing(
             (hold, events),
             relay.clone(),
             registry.clone(),
@@ -114,6 +115,7 @@ impl Companion {
             watch,
         )?;
         Ok(Companion {
+            threads: vec![presser, hearer],
             url: address(&settings.advertise, &relay, settings.trust),
             relay,
             taps,
@@ -151,6 +153,9 @@ impl Drop for Companion {
     fn drop(&mut self) {
         self.quit.store(true, SeqCst);
         self.taps.clear();
+        std::mem::take(&mut self.threads)
+            .into_iter()
+            .for_each(|thread| drop(thread.join()));
     }
 }
 
@@ -224,9 +229,14 @@ fn address(advertise: &Option<String>, relay: &Relay, trust: bool) -> String {
     }
 }
 
-fn pressing(relay: Arc<Relay>, quit: Arc<AtomicBool>, fire: Fire, watch: Watch) -> Result<()> {
+fn pressing(
+    relay: Arc<Relay>,
+    quit: Arc<AtomicBool>,
+    fire: Fire,
+    watch: Watch,
+) -> Result<std::thread::JoinHandle<()>> {
     let presses = relay.presses().clone();
-    std::thread::Builder::new()
+    Ok(std::thread::Builder::new()
         .name("companion-press".into())
         .spawn(move || {
             let mut last: HashMap<(RigId, Slot), Instant> = HashMap::new();
@@ -250,8 +260,7 @@ fn pressing(relay: Arc<Relay>, quit: Arc<AtomicBool>, fire: Fire, watch: Watch) 
                     }
                 }
             }
-        })?;
-    Ok(())
+        })?)
 }
 
 fn fired(fire: &Fire, press: Press) -> Seen {
@@ -277,8 +286,8 @@ fn hearing(
     also: Option<Sender<Downlink>>,
     quit: Arc<AtomicBool>,
     watch: Watch,
-) -> Result<()> {
-    std::thread::Builder::new()
+) -> Result<std::thread::JoinHandle<()>> {
+    Ok(std::thread::Builder::new()
         .name("companion-events".into())
         .spawn(move || {
             let (_hold, events) = channel;
@@ -303,8 +312,7 @@ fn hearing(
                     also.as_ref().map(|hub| hub.try_send(message));
                 }
             }
-        })?;
-    Ok(())
+        })?)
 }
 
 fn alerted(rig: RigId, label: &str, message: &Downlink) -> Option<Seen> {

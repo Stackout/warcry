@@ -142,7 +142,10 @@ pub fn rescan(app: &AppHandle) {
     let state = app.state::<App>();
     let stale = {
         let live = state.companion.lock();
-        live.as_ref().is_some_and(|live| live.wanted != wow())
+        match live.as_ref() {
+            Some(live) => live.wanted != wow(),
+            None => state.config.lock().deck.enabled,
+        }
     };
     if !stale {
         return;

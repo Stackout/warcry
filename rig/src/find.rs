@@ -29,9 +29,11 @@ fn parse(listing: &str) -> Vec<Candidate> {
         .collect()
 }
 
+const BUNDLE: &str = "/World of Warcraft.app/Contents/MacOS/";
+
 fn is_wow(command: &str) -> bool {
     let name = command.rsplit('/').next().unwrap_or(command).to_lowercase();
-    name.starts_with("world of warcraft") && !name.contains("launcher")
+    name.starts_with("world of warcraft") && !name.contains("launcher") && command.contains(BUNDLE)
 }
 
 #[cfg(test)]
@@ -57,6 +59,15 @@ mod tests {
         let listing = "\
  100 /Applications/World of Warcraft/World of Warcraft Launcher.app/Contents/MacOS/World of Warcraft Launcher
  101 /Applications/Battle.net.app/Contents/MacOS/Battle.net
+";
+        assert_eq!(parse(listing), vec![]);
+    }
+
+    #[test]
+    fn a_loose_binary_with_the_right_name_is_not_a_client() {
+        let listing = "\
+ 200 /tmp/scratch/World of Warcraft
+ 201 /Users/someone/Downloads/World of Warcraft
 ";
         assert_eq!(parse(listing), vec![]);
     }

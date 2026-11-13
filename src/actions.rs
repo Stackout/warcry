@@ -124,13 +124,25 @@ struct Ctx<'a> {
     dry: bool,
 }
 
+fn fronted(target: &Target) -> bool {
+    window::front().ok().flatten().is_some_and(|w| {
+        target
+            .pid
+            .map_or(window::matches(&w, target), |pid| pid == w.pid)
+    })
+}
+
 fn targeted(ctx: Ctx, target: &Target, actions: &[Action]) -> Result<()> {
-    let win = window::find(target)?;
     #[cfg(windows)]
     if target.mode == TargetMode::Background {
+        let win = window::find(target)?;
         return drive(window::BackgroundSink::new(&win), ctx, actions);
     }
-    let previous = window::active().ok().flatten().filter(|p| p.id != win.id);
+    if fronted(target) {
+        return drive(EnigoSink::new()?, ctx, actions);
+    }
+    let win = window::find(target)?;
+    let previous = window::front().ok().flatten().filter(|p| p.pid != win.pid);
     window::focus(&win)?;
     let result = drive(EnigoSink::new()?, ctx, actions);
     previous

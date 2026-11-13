@@ -174,6 +174,71 @@ fn numbered(name: &str) -> Option<Key> {
         })
 }
 
+#[cfg(target_os = "macos")]
+const MAC_KEYCODES: [(char, u16); 47] = [
+    ('a', 0),
+    ('s', 1),
+    ('d', 2),
+    ('f', 3),
+    ('h', 4),
+    ('g', 5),
+    ('z', 6),
+    ('x', 7),
+    ('c', 8),
+    ('v', 9),
+    ('b', 11),
+    ('q', 12),
+    ('w', 13),
+    ('e', 14),
+    ('r', 15),
+    ('y', 16),
+    ('t', 17),
+    ('1', 18),
+    ('2', 19),
+    ('3', 20),
+    ('4', 21),
+    ('6', 22),
+    ('5', 23),
+    ('=', 24),
+    ('9', 25),
+    ('7', 26),
+    ('-', 27),
+    ('8', 28),
+    ('0', 29),
+    (']', 30),
+    ('o', 31),
+    ('u', 32),
+    ('[', 33),
+    ('i', 34),
+    ('p', 35),
+    ('l', 37),
+    ('j', 38),
+    ('\'', 39),
+    ('k', 40),
+    (';', 41),
+    ('\\', 42),
+    (',', 43),
+    ('/', 44),
+    ('n', 45),
+    ('m', 46),
+    ('.', 47),
+    ('`', 50),
+];
+
+#[cfg(target_os = "macos")]
+fn char_key(c: char) -> Option<E> {
+    let wanted = c.to_ascii_lowercase();
+    MAC_KEYCODES
+        .iter()
+        .find(|(ch, _)| *ch == wanted)
+        .map(|(_, code)| E::Other(*code as u32))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn char_key(c: char) -> Option<E> {
+    Some(E::Unicode(c))
+}
+
 impl Key {
     pub fn parse(s: &str) -> Result<Key> {
         let raw = s.trim();
@@ -201,7 +266,7 @@ impl Key {
     pub fn to_enigo(self) -> Result<E> {
         let unsupported = || anyhow!("key {self} is not supported on this platform");
         Ok(match self {
-            Key::Char(c) => E::Unicode(c),
+            Key::Char(c) => char_key(c).ok_or_else(unsupported)?,
             Key::Space => E::Space,
             Key::Enter => E::Return,
             Key::Tab => E::Tab,
@@ -344,6 +409,21 @@ impl fmt::Display for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_character_becomes_a_raw_keycode_and_never_asks_the_layout_service() {
+        let code = |c: char| match Key::Char(c).to_enigo().unwrap() {
+            E::Other(code) => code,
+            other => panic!("{c} mapped to {other:?}, which calls TSMGetInputSourceProperty"),
+        };
+        assert_eq!(code('a'), 0);
+        assert_eq!(code('c'), 8);
+        assert_eq!(code('3'), 20);
+        assert_eq!(code('C'), 8);
+        assert_eq!(code('\''), 39);
+        assert!(Key::Char('\u{e9}').to_enigo().is_err());
+    }
 
     #[test]
     fn parse_names() {

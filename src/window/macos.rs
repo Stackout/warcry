@@ -1,9 +1,24 @@
 use super::WindowInfo;
-use anyhow::{Result, ensure};
-use std::process::Command;
+use anyhow::{Context, Result, anyhow, ensure};
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+const DEADLINE: Duration = Duration::from_secs(5);
 
 fn osascript(script: &str) -> Result<String> {
-    let out = Command::new("osascript").arg("-e").arg(script).output()?;
+    let child = Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("could not run osascript")?;
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("osascript".into())
+        .spawn(move || drop(tx.send(child.wait_with_output())))?;
+    let out = rx.recv_timeout(DEADLINE).map_err(|_| abandon(pid))??;
     ensure!(
         out.status.success(),
         "osascript failed: {} (grant Accessibility and Automation permission to your terminal)",
@@ -12,20 +27,34 @@ fn osascript(script: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+fn abandon(pid: u32) -> anyhow::Error {
+    drop(Command::new("kill").arg("-9").arg(pid.to_string()).status());
+    anyhow!(
+        "osascript did not answer within {}s; a window it asked about is not responding",
+        DEADLINE.as_secs()
+    )
+}
+
 const LIST: &str = r#"
 set out to ""
 tell application "System Events"
-  repeat with p in (every process whose background only is false)
-    set pn to name of p
-    set pid to unix id of p
-    set wins to {pn}
-    try
-      if (count of windows of p) > 0 then set wins to name of every window of p
-    end try
-    repeat with w in wins
-      set out to out & pid & tab & pn & tab & (w as text) & linefeed
+  with timeout of 3 seconds
+    repeat with p in application processes
+      try
+        if background only of p is false then
+          set pn to name of p
+          set pid to unix id of p
+          set wins to {pn}
+          try
+            if (count of windows of p) > 0 then set wins to name of every window of p
+          end try
+          repeat with w in wins
+            set out to out & pid & tab & pn & tab & (w as text) & linefeed
+          end repeat
+        end if
+      end try
     end repeat
-  end repeat
+  end timeout
 end tell
 return out
 "#;
@@ -66,8 +95,12 @@ pub fn list() -> Result<Vec<WindowInfo>> {
     Ok(parse(&osascript(LIST)?))
 }
 
+pub fn front() -> Result<Option<WindowInfo>> {
+    Ok(parse(osascript(ACTIVE)?.trim_end()).into_iter().next())
+}
+
 pub fn active() -> Result<Option<WindowInfo>> {
-    let front = parse(osascript(ACTIVE)?.trim_end()).into_iter().next();
+    let front = front()?;
     let known = |f: &WindowInfo| {
         list()
             .ok()?

@@ -58,11 +58,24 @@ pub fn active() -> Result<Option<WindowInfo>> {
     imp::active()
 }
 
+#[cfg(target_os = "macos")]
+pub fn front() -> Result<Option<WindowInfo>> {
+    imp::front()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn front() -> Result<Option<WindowInfo>> {
+    imp::active()
+}
+
 pub fn focus(w: &WindowInfo) -> Result<()> {
     imp::focus(w)?;
     let focused = (0..30).any(|_| {
         std::thread::sleep(Duration::from_millis(10));
-        active().ok().flatten().is_some_and(|a| a.id == w.id)
+        front()
+            .ok()
+            .flatten()
+            .is_some_and(|a| a.pid == w.pid && a.title == w.title)
     });
     (!focused).then(|| tracing::debug!("{w} did not report focus within 300ms"));
     Ok(())

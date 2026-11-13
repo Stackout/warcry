@@ -116,8 +116,13 @@ against a scratch profile without touching your own.
 
 The probe thread calls `companion::rescan` every 2s: if the set of World of Warcraft pids has
 changed, the companion is torn down and restarted so a client started after the app still gets
-heard. Restart is synchronous (`halt` then `start`) because the old relay must release the port
-before the new one binds.
+heard. Restart is `halt` then `start`, and **`halt` only truly frees the port because
+`Companion::drop` joins the companion threads.** It did not at first: `pressing` and `hearing`
+hold `Arc<Relay>` clones, so setting the quit flag left the old listener bound while `start`
+ran microseconds later, and the rebind died with `Address already in use (os error 48)`. The
+companion then stayed dead, because `rescan` asked `is_some_and(...)`, which is false when
+there is no companion at all -- so nothing ever retried. `rescan` now treats "no companion
+while the deck is enabled" as stale and restarts it.
 
 ## Part two: the desktop app
 
@@ -186,12 +191,28 @@ and is gitignored; a PowerShell version would help on Windows.
 - **`rtk` wrapper**: a hook rewrites shell commands, swallows `cargo test` summaries and mangles
   multi-file `grep`. Use `rtk proxy cargo test ...` to see real output -- and note that a plain
   `cargo clippy` through the hook can report "No issues found" while clippy is failing.
+- **Never pipe a long build into `tail` and background it.** The `whisper-rs-sys` build script
+  deadlocked for 26 minutes writing into a full pipe whose reader had been killed: no compiler
+  children, no file writes, holding `.cargo-lock` the whole time. Redirect to a log file instead.
+- **A process is only a client if it runs from the app bundle.** `rig::find` used to match on the
+  basename alone, so any file named "World of Warcraft" counted -- two copies in a scratch
+  directory were enumerated as rigs 0 and 1 ahead of the real client. It now also requires
+  `/World of Warcraft.app/Contents/MacOS/`.
 - **CI stops at the first crate that fails to lint.** A clean lint of the relay said nothing
   about rig, hub or app, which had eight more errors between them. Always lint `--workspace`.
 - **`.gitattributes` keeps the served assets LF.** Without it, git hands Windows CRLF copies of
   `relay/ui/*` and anything that reasons about the HTTP body by splitting on a blank line breaks.
 - **Postcard is not self-describing**, so serde internally-tagged enums (`#[serde(tag = "...")]`)
   silently fail to decode. All protocol enums are externally tagged. Do not add a tag.
+- **Never hand enigo a `Key::Unicode` on macOS.** It resolves the character by asking the Text
+  Services Manager for the current layout, and `TSMGetInputSourceProperty` calls
+  `dispatch_assert_queue(main)`. Every command runs on its own thread, so the assert fired and
+  the whole app died with `EXC_BREAKPOINT` -- an abort, not a catchable panic. `Key::Char` now
+  maps through `MAC_KEYCODES` to a raw CGKeyCode and goes out as `Key::Other`, which enigo
+  passes straight through. This also removed 256 TSM round-trips per keypress. Keycodes are
+  positional (US ANSI), which is what a game binding wants; an unmapped character is now a
+  clean "not supported" error instead of a crash. It hid for so long because the shipped
+  profile targeted a window that never matched, and fishing only ever sent right-clicks.
 - **macOS permissions**: `enigo` needs Accessibility and `osascript` needs Automation, both
   granted to the *terminal* that launched Warcry, not to Warcry. `rig` prints
   `accessibility: granted|DENIED` at startup. Screenshotting needs Screen Recording too, or
@@ -199,7 +220,7 @@ and is gitignored; a PowerShell version would help on Windows.
 
 ### Never block the main thread, and know how to find it when you do
 
-Four separate hangs came from blocking work on a thread that could not afford it. When
+Five separate hangs came from blocking work on a thread that could not afford it. When
 something freezes, **`sample <pid> 3` first** — it found the last one in thirty seconds after
 two rounds of guessing.
 
@@ -217,6 +238,13 @@ two rounds of guessing.
   holding it, and the phone's websocket thread then blocked in `Hosted::welcome`, so the symptom
   was "the page loads but nothing ever answers". Read what you need out of a lock and drop the
   guard; `companion::current` additionally uses `try_lock` and falls back to the profile on disk.
+- `osascript` had no deadline. A single AppleEvent that never came back left the `probe` thread
+  parked in `poll` on the child's pipe forever, so the window list and the device list stopped
+  updating and the app had to be force-quit. `sample <pid> 3` named the frame in one shot:
+  `spawn_probe` -> `window::list` -> `macos::osascript` -> `Command::output` -> `poll`. Every
+  shell-out now dies after `DEADLINE` (5s) and the probe keeps its last good answer instead of
+  replacing it with an empty list. **This is macOS-only** -- the Windows `list()` calls
+  `EnumWindows` and spawns nothing.
 - **Never swallow a shell-out error.** `unwrap_or_default()` hid an `osascript` failure and
   turned `--focus` into a silent no-op for an hour.
 

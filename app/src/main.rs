@@ -865,14 +865,28 @@ fn target_windows(state: State<App>) -> Vec<WindowChoice> {
         .collect()
 }
 
+fn refresh(app: &AppHandle) {
+    let windows = window::list();
+    let devices = audio::devices();
+    if let Err(e) = &windows {
+        tracing::warn!("cannot list windows: {e}");
+    }
+    let state = app.state::<App>();
+    let mut probe = state.probe.lock();
+    if let Ok(windows) = windows {
+        probe.windows = windows;
+    }
+    if let Ok(devices) = devices {
+        probe.devices = devices;
+    }
+}
+
 fn spawn_probe(app: AppHandle) {
     let spawned = std::thread::Builder::new()
         .name("probe".into())
         .spawn(move || {
             loop {
-                let windows = window::list().unwrap_or_default();
-                let devices = audio::devices().unwrap_or_default();
-                *app.state::<App>().probe.lock() = Probe { windows, devices };
+                refresh(&app);
                 companion::rescan(&app);
                 std::thread::sleep(std::time::Duration::from_secs(2));
             }
