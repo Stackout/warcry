@@ -7,7 +7,7 @@
 Warcry is an open-source, cross-platform voice command engine for games and apps, in the spirit of VoiceAttack. Say "cast the line" and it right-clicks in your game, even while you're typing in another window. It's written in Rust, runs entirely offline with [whisper.cpp](https://github.com/ggml-org/whisper.cpp), and works on **Windows, macOS, and Linux**.
 
 ```
-$ warcry run fishing.toml
+$ warcry run default.toml
   INFO speech model ~/.local/share/warcry/models/ggml-base.en.bin
   INFO microphone "Blue Yeti" at 48000 Hz
   INFO targeting window title~"World of Warcraft" (FocusRestore)
@@ -43,7 +43,9 @@ Grab the installer for your computer from [Releases](../../releases) and double-
 
 Warcry lives in your system tray. Click the tray icon to open the window, or right-click it to pause listening, start or stop, or quit. Closing the window keeps Warcry running in the tray.
 
-**First run:** click **Create fishing profile**, pick your microphone, and press **Start**. The speech model (142 MB) downloads automatically. Use **Test** to try phrases without speaking, and **Edit** to open the profile in your text editor; saved changes apply immediately.
+**First run:** click **Create a profile**, then flip **Listen** on. The speech model (142 MB) downloads automatically. The **Target** menu in the toolbar picks the one window Warcry drives — by pid while that client is running, by title after a relaunch. **Test** tries a phrase without speaking, and **Open file** edits the profile in your text editor; saved changes apply immediately.
+
+The icon rail on the left holds **Live** (what Warcry hears), **Commands**, **Phone**, **Log** and **Settings**, where the microphone, speech model, addon and startup options live.
 
 ### Your phone as a button deck
 
@@ -68,8 +70,8 @@ Each release also includes a `warcry-cli-…` archive with the `warcry` command 
 ## Command-line quick start
 
 ```sh
-warcry init                     # writes the fishing example to your config dir
-warcry windows minecraft        # find the window you want to target
+warcry init                     # writes the default example to your config dir
+warcry windows warcraft         # find the window you want to target
 warcry check                    # validate the profile and list commands
 warcry simulate ~/.config/warcry/profile.toml "cast the line" --dry-run
 warcry run                      # start listening

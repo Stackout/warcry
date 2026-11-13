@@ -126,10 +126,15 @@ while the deck is enabled" as stale and restarts it.
 
 ## Part two: the desktop app
 
-The Commands tab edits commands: name, phrase to say, key to press, optional hotkey, which
-window, and whether it works while not listening. `Profile::save` serialises, parses the
-result back, and only then writes, so a profile that would fail to load can never replace a
-working one.
+The window is an icon rail -- Live, Commands, Phone, Log, Settings -- beside a pane that names
+the active view. Flat surfaces, hairline separators, 4px corners; ember is reserved for things
+that are live. There is no Start/Stop button: the **Listen** switch starts the engine when it
+must, and switching it off pauses rather than dropping the engine, so the phone's `mic` pad can
+switch it back on.
+
+The Commands tab edits commands: name, phrase to say, key to press, optional hotkey, and
+whether it works while not listening. `Profile::save` serialises, parses the result back, and
+only then writes, so a profile that would fail to load can never replace a working one.
 
 A command whose actions are more than a single press or combo is shown but **not editable in
 the UI** — flattening someone's macro into one keystroke silently would be worse than sending
@@ -141,9 +146,15 @@ Multiboxing runs **one executable with one window title**, so nothing about a wi
 separates two clients. Do not suggest renaming the executable: it does not work (same binary)
 and it means touching the game install.
 
-`Target` now carries an optional `pid`. The editor lists open windows and the command
-remembers the chosen one. `window::find` prefers that exact pid while it exists and falls back
-to title matching after a relaunch, so a dead pid degrades rather than breaks.
+`Target` carries an optional `pid`. **Warcry drives one window at a time**, so the target is a
+single dropdown in the toolbar, not a picker on every command: choosing a window writes its
+title, process and pid into `profile.target`. `window::find` prefers that exact pid while it
+exists and falls back to title matching after a relaunch, so a dead pid degrades rather than
+breaks. A command carrying its own `target` still runs, but `simple()` reports it as not
+editable in the UI -- a form that cannot show a per-command window must not silently drop one.
+
+The *companion* is the exception and stays multi-window: every client it can hear gets its own
+cast and reel pair on the phone, which is the whole point when multiboxing.
 
 That covers "I have one healer window". It does **not** reliably pick between N clients across
 restarts. The real answer there is the identity beacon, which needs, in order:
