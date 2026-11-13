@@ -215,3 +215,11 @@ name = "mark hunter"
 phrase = "mark [of the wild;] [hunter;hawk]"
 pad = true
 actions = [{ do = "press", key = "f6" }]
+
+[[command]]
+name = "mic"
+phrase = "[mute;unmute;toggle] [the;my;] mic[rophone;];[mute;unmute] [yourself;warcry;]"
+no_target = true
+always_active = true
+pad = true
+actions = [{ do = "listening", state = "toggle" }]
