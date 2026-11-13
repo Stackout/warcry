@@ -17,6 +17,13 @@ pub fn devices() -> Result<Vec<String>> {
         .collect())
 }
 
+pub fn rms_of(samples: &[f32]) -> f32 {
+    match samples.is_empty() {
+        true => 0.0,
+        false => (samples.iter().map(|x| x * x).sum::<f32>() / samples.len() as f32).sqrt(),
+    }
+}
+
 pub struct Mic {
     _stream: cpal::Stream,
     pub rate: u32,
@@ -152,6 +159,7 @@ pub enum Gate {
 
 pub struct Vad {
     min_threshold: f32,
+    noise_multiplier: f32,
     silence_frames: u32,
     max_samples: usize,
     min_samples: usize,
@@ -169,6 +177,7 @@ impl Vad {
         let silence_frames = (s.silence_ms * RATE / 1000) as usize / FRAME;
         Self {
             min_threshold: s.vad_threshold,
+            noise_multiplier: s.noise_multiplier,
             silence_frames: silence_frames as u32,
             max_samples: (s.max_utterance_ms * RATE / 1000) as usize,
             min_samples: (silence_frames + 10) * FRAME,
@@ -209,7 +218,7 @@ impl Vad {
 
     fn detect(&mut self, f: &[f32]) -> Option<Vec<f32>> {
         let rms = (f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt();
-        let loud = rms > self.min_threshold.max(self.noise * 3.0);
+        let loud = rms > self.min_threshold.max(self.noise * self.noise_multiplier);
         match (self.active, loud) {
             (false, false) => {
                 self.noise = self.noise * 0.95 + rms * 0.05;

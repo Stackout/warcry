@@ -47,6 +47,15 @@ enum Cmd {
     Windows { filter: Option<String> },
     #[command(about = "List microphones")]
     Devices,
+    #[command(about = "Show live microphone levels to tune vad_threshold and mic_gain")]
+    Meter {
+        #[arg(long, help = "Microphone name (substring)")]
+        device: Option<String>,
+        #[arg(long, default_value_t = 1.0, help = "Gain to apply while measuring")]
+        gain: f32,
+        #[arg(long, default_value_t = 20, help = "Seconds to measure")]
+        seconds: u64,
+    },
     #[command(about = "Transcribe a WAV file and show which command it would trigger")]
     Transcribe {
         wav: PathBuf,
@@ -84,6 +93,40 @@ fn print_progress(read: u64, total: u64) {
         read >> 20,
         total >> 20
     );
+}
+
+fn meter(device: Option<&str>, gain: f32, seconds: u64) -> Result<()> {
+    let (tx, rx) = crossbeam_channel::unbounded();
+    let mic = audio::open(device, tx)?;
+    let mut resampler = warcry::audio::Resampler::new(mic.rate);
+    println!("{} at {} Hz, gain {gain}", mic.name, mic.rate);
+    println!("speak a command, then stay quiet. ctrl+c to stop early.\n");
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    let mut quiet: Vec<f32> = Vec::new();
+    let mut peak = 0.0f32;
+    while std::time::Instant::now() < until {
+        let Ok(chunk) = rx.recv_timeout(std::time::Duration::from_millis(500)) else {
+            continue;
+        };
+        let samples = resampler.process(&chunk);
+        let rms = warcry::audio::rms_of(&samples) * gain;
+        peak = peak.max(rms);
+        quiet.push(rms);
+        let bars = (rms * 300.0) as usize;
+        println!("{rms:.5} {:needed$}", "", needed = bars.min(60));
+    }
+    quiet.sort_by(|a, b| a.total_cmp(b));
+    let floor = quiet.get(quiet.len() / 4).copied().unwrap_or(0.0);
+    println!(
+        "\nnoise floor {floor:.5}   loudest {peak:.5}   ratio {:.1}x",
+        peak / floor.max(1e-9)
+    );
+    println!("suggested vad_threshold = {:.4}", (floor * 2.0).max(0.002));
+    println!(
+        "suggested mic_gain      = {:.1}",
+        (0.08 / peak.max(1e-6)).clamp(1.0, 10.0)
+    );
+    Ok(())
 }
 
 fn print_lines(lines: impl IntoIterator<Item = impl Display>) -> Result<()> {
@@ -140,6 +183,11 @@ fn main() -> Result<()> {
         Cmd::Check { profile } => check(&profile_path(profile)?),
         Cmd::Windows { filter } => list_windows(filter),
         Cmd::Devices => print_lines(audio::devices()?),
+        Cmd::Meter {
+            device,
+            gain,
+            seconds,
+        } => meter(device.as_deref(), gain, seconds),
         Cmd::Transcribe {
             wav,
             profile,

@@ -28,6 +28,8 @@ pub struct Settings {
     pub language: String,
     pub input_device: Option<String>,
     pub vad_threshold: f32,
+    pub mic_gain: f32,
+    pub noise_multiplier: f32,
     pub silence_ms: u32,
     pub max_utterance_ms: u32,
     pub speak_confirmations: bool,
@@ -44,6 +46,8 @@ impl Default for Settings {
             language: "en".into(),
             input_device: None,
             vad_threshold: 0.012,
+            mic_gain: 1.0,
+            noise_multiplier: 3.0,
             silence_ms: 450,
             max_utterance_ms: 8000,
             speak_confirmations: false,
@@ -281,6 +285,14 @@ impl Profile {
         ensure!(
             (0.0..=1.0).contains(&self.settings.min_confidence),
             "settings.min_confidence must be 0.0-1.0"
+        );
+        ensure!(
+            (0.1..=20.0).contains(&self.settings.mic_gain),
+            "settings.mic_gain must be 0.1-20.0"
+        );
+        ensure!(
+            (1.0..=20.0).contains(&self.settings.noise_multiplier),
+            "settings.noise_multiplier must be 1.0-20.0"
         );
         self.settings
             .push_to_talk

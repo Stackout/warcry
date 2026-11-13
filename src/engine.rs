@@ -340,11 +340,22 @@ fn gate(shared: &Shared) -> Gate {
     }
 }
 
+fn amplified(samples: Vec<f32>, gain: f32) -> Vec<f32> {
+    match gain == 1.0 {
+        true => samples,
+        false => samples
+            .into_iter()
+            .map(|s| (s * gain).clamp(-1.0, 1.0))
+            .collect(),
+    }
+}
+
 fn segment(shared: &Shared, rate: u32, rx: Receiver<Vec<f32>>, tx: Sender<Vec<f32>>) -> Result<()> {
     let mut resampler = Resampler::new(rate);
     let mut vad = Vad::new(&shared.profile().settings);
+    let gain = shared.profile().settings.mic_gain;
     rx.iter()
-        .flat_map(|chunk| vad.push(&resampler.process(&chunk), gate(shared)))
+        .flat_map(|chunk| vad.push(&amplified(resampler.process(&chunk), gain), gate(shared)))
         .try_for_each(|utterance| tx.send(utterance))
         .map_err(Into::into)
 }
