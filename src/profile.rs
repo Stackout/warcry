@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn bundled_profiles_parse() {
-        [crate::EXAMPLE_FISHING, crate::EXAMPLE_STARTER]
+        [crate::EXAMPLE_DEFAULT, crate::EXAMPLE_STARTER]
             .iter()
             .for_each(|src| {
                 Profile::parse(src).unwrap();

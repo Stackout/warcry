@@ -7,96 +7,68 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="bar">
-    <div class="brand">
-      <img src="logo.png" alt="">
-      <div>
-        <h1>Warcry</h1>
-        <p id="profile-name">No profile</p>
+  <div class="shell">
+    <nav class="rail">
+      <div class="mark"><img src="logo.png" alt=""></div>
+      <button data-tab="live" class="active" title="Live">
+        <svg viewBox="0 0 24 24"><path d="M3 12h3l2.5-7 4 14 3-9 1.5 2H21"/></svg>
+        <em>Live</em>
+      </button>
+      <button data-tab="commands" title="Commands">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        <em>Commands</em>
+        <span class="badge" id="command-tally"></span>
+      </button>
+      <button data-tab="phone" title="Phone deck">
+        <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg>
+        <em>Phone</em>
+        <span class="badge" id="phone-count"></span>
+      </button>
+      <span class="grow"></span>
+      <button data-tab="log" title="Log">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7.5 9.5l3 2.5-3 2.5M13 15h4"/></svg>
+        <em>Log</em>
+      </button>
+      <button data-tab="settings" title="Settings">
+        <svg viewBox="0 0 24 24"><path d="M4 7h8M17 7h3M4 17h3M12 17h8"/><circle cx="14.5" cy="7" r="2.5"/><circle cx="9.5" cy="17" r="2.5"/></svg>
+        <em>Settings</em>
+      </button>
+    </nav>
+    <div class="pane">
+    <header class="chrome">
+      <span id="view" class="view">Live</span>
+      <div class="live">
+        <span id="status" class="pill off"><i></i><b>Stopped</b></span>
+        <span id="ptt" class="hint" hidden></span>
       </div>
-    </div>
-    <div class="status">
-      <span id="status" class="pill off"><i></i><b>Stopped</b></span>
-      <span id="ptt" class="hint" hidden></span>
-    </div>
-    <div class="controls">
       <label class="switch" id="listening-switch">
         <input type="checkbox" id="listening">
         <span class="track"><span class="knob"></span></span>
-        <em>Listening</em>
+        <em>Listen</em>
       </label>
-      <button id="power" class="power"><span>Start</span></button>
+    </header>
+
+    <div class="toolbar">
+      <label class="field"><span>Profile</span><select id="profile"></select></label>
+      <label class="field"><span>Target</span><select id="target-pick"></select></label>
+      <span id="target" class="target"></span>
+      <span class="grow"></span>
+      <button id="edit" class="ghost">Open file</button>
+      <p id="profile-error" class="error" hidden></p>
     </div>
-  </header>
 
-  <main>
-    <aside class="side">
-      <section class="card">
-        <h2>Profile</h2>
-        <select id="profile"></select>
-        <div class="row">
-          <button id="edit" class="ghost">Edit</button>
-          <button id="folder" class="ghost">Folder</button>
-        </div>
-        <div class="row">
-          <button id="new-fishing" class="ghost small">+ Fishing</button>
-          <button id="new-starter" class="ghost small">+ Starter</button>
-        </div>
-        <p id="profile-error" class="error" hidden></p>
-      </section>
-
-      <section class="card">
-        <h2>Target window</h2>
-        <p id="target" class="target">Whatever window is focused</p>
-      </section>
-
-      <section class="card">
-        <h2>Microphone</h2>
-        <select id="device"></select>
-      </section>
-
-      <section class="card">
-        <h2>Speech model</h2>
-        <select id="model"></select>
-        <button id="download" class="ghost" hidden>Download model</button>
-        <div id="progress" class="progress" hidden>
-          <div class="fill"></div>
-          <span></span>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>WoW addon <small id="addon-version"></small></h2>
-        <div id="addon" class="addon"></div>
-      </section>
-
-      <section class="card">
-        <label class="check">
-          <input type="checkbox" id="auto-start">
-          <span>Start listening when Warcry opens</span>
-        </label>
-      </section>
-    </aside>
-
-    <section class="stage">
-      <nav class="tabs">
-        <button data-tab="live" class="active">Live</button>
-        <button data-tab="commands">Commands <small id="command-count"></small></button>
-        <button data-tab="phone">Phone <small id="phone-count"></small></button>
-        <button data-tab="log">Log</button>
-      </nav>
-
+    <main>
       <div class="tab" id="tab-live">
         <form id="try" class="try">
-          <input id="try-text" placeholder="Test a phrase without speaking, e.g. “throw my line”" autocomplete="off">
+          <input id="try-text" placeholder="Try a phrase without speaking, e.g. “heal my pet”" autocomplete="off">
           <button class="ghost">Test</button>
         </form>
         <p id="try-result" class="try-result"></p>
         <div id="welcome" class="welcome" hidden>
           <img src="logo.png" alt="">
           <h3>Let’s get you set up</h3>
-          <p>Create a profile to start. The fishing example casts and reels with your voice, so it’s a good place to begin.</p>
-          <button id="welcome-fishing" class="power"><span>Create fishing profile</span></button>
+          <p>Create a profile to start. The default one casts, reels and heals with your voice.</p>
+          <button id="welcome-default" class="primary">Create a profile</button>
         </div>
         <ol id="feed" class="feed"></ol>
         <div id="feed-empty" class="empty">
@@ -114,22 +86,17 @@
             pet" and "heal pet". Separate whole phrasings with <code>;</code> outside brackets.</p>
           <label>Press<input id="d-keys" placeholder="click, then press the key" autocomplete="off"></label>
           <label>Hotkey<input id="d-hotkey" placeholder="optional, click then press" autocomplete="off"></label>
-          <p class="hint">Click a key field and press the combination you want — no typing. Esc cancels.</p>
-          <label>Window<select id="d-window-pick"></select></label>
-          <label>Send<select id="d-mode">
-            <option value="background">in the background, no focus steal</option>
-            <option value="focus_restore">focus it, then give focus back</option>
-            <option value="focus">focus it and leave it focused</option>
-          </select></label>
+          <p class="hint">Click a key field and press the combination you want — no typing. Esc cancels.
+            Keys go to the target window chosen above.</p>
           <label class="check"><input type="checkbox" id="d-active"> Works even while not listening</label>
           <label class="check"><input type="checkbox" id="d-pad"> Give it a button on my phone</label>
           <div class="editor-row">
             <button id="d-save" class="primary">Save</button>
-            <button id="d-cancel">Cancel</button>
+            <button id="d-cancel" class="ghost">Cancel</button>
             <span id="d-error" class="missing"></span>
           </div>
         </div>
-        <div class="toolbar">
+        <div class="bar-row">
           <button id="add-command" class="primary">Add a command</button>
           <input id="command-search" type="search" placeholder="Search names, phrases or keys" autocomplete="off">
           <span id="command-count" class="meta"></span>
@@ -141,7 +108,6 @@
               <th>Say</th>
               <th>Sends</th>
               <th>Hotkey</th>
-              <th>Window</th>
               <th></th>
             </tr>
           </thead>
@@ -151,59 +117,136 @@
       </div>
 
       <div class="tab" id="tab-phone" hidden>
-        <div class="phone">
-          <section class="card wide">
-            <h2>Phone deck <small id="phone-state" class="meta"></small></h2>
-            <p class="meta">Warcry serves a page your phone opens over your own network. It shows a
-              button for every command you tick as a phone button, and a cast/reel button for each
-              World of Warcraft window it can hear.</p>
-            <div class="row">
-              <button id="phone-power" class="primary">Turn on</button>
-              <button id="phone-copy" class="ghost" hidden>Copy link</button>
-            </div>
-            <div id="phone-pair" class="pair" hidden>
-              <div id="phone-qr" class="qr"></div>
-              <div>
-                <p class="meta">Point your camera at this, or type it in.</p>
-                <code id="phone-url"></code>
+        <section class="group">
+          <h2>Phone deck <small id="phone-state" class="meta"></small></h2>
+          <p class="note">Warcry serves a page your phone opens over your own network. It shows a
+            button for every command you tick as a phone button, and a cast/reel pair for every
+            World of Warcraft window it can hear — so a multiboxed client gets its own fish button.</p>
+          <div class="rows">
+            <div class="rw">
+              <span>Deck</span>
+              <div class="ctl">
+                <button id="phone-power" class="primary">Turn on</button>
+                <button id="phone-copy" class="ghost" hidden>Copy link</button>
               </div>
             </div>
-            <ul id="phone-seats" class="seats"></ul>
-          </section>
+          </div>
+          <div id="phone-pair" class="pair" hidden>
+            <div id="phone-qr" class="qr"></div>
+            <div>
+              <p class="note">Point your camera at this, or type it in.</p>
+              <code id="phone-url"></code>
+            </div>
+          </div>
+          <ul id="phone-seats" class="seats"></ul>
+        </section>
 
-          <section class="card wide">
-            <h2>Fishing buttons</h2>
-            <p class="meta">What the phone's cast and reel buttons do. Pick a command for voice and
-              phone parity, or leave them unset and Warcry taps one key into the window it heard.</p>
-            <label>Cast runs<select id="phone-cast"></select></label>
-            <label>Reel runs<select id="phone-reel"></select></label>
-            <label>Otherwise press<input id="phone-key" placeholder="'" autocomplete="off"></label>
-            <label class="check"><input type="checkbox" id="phone-speak"> Say alerts out loud, even
-              when this window is closed</label>
-          </section>
+        <section class="group">
+          <h2>Fishing buttons</h2>
+          <p class="note">What each window's cast and reel buttons do. Pick a command for voice and
+            phone parity, or leave them unset and Warcry taps one key into the window it heard.</p>
+          <div class="rows">
+            <label class="rw"><span>Cast runs</span><select id="phone-cast"></select></label>
+            <label class="rw"><span>Reel runs</span><select id="phone-reel"></select></label>
+            <label class="rw"><span>Otherwise press</span><input id="phone-key" placeholder="'" autocomplete="off"></label>
+            <label class="rw"><span>Say alerts out loud, even when this window is closed</span><input type="checkbox" id="phone-speak"></label>
+          </div>
+        </section>
 
-          <section class="card wide">
-            <h2>Network</h2>
-            <label>Port<input id="phone-port" type="number" min="1" max="65535"></label>
-            <label>Address to show<input id="phone-advertise" placeholder="leave empty to guess" autocomplete="off"></label>
-            <label class="check"><input type="checkbox" id="phone-enabled"> Turn the deck on when Warcry opens</label>
-            <label class="check"><input type="checkbox" id="phone-trust"> No pairing token — anyone
-              on this network can press my buttons</label>
-          </section>
+        <section class="group">
+          <h2>Network</h2>
+          <div class="rows">
+            <label class="rw"><span>Port</span><input id="phone-port" type="number" min="1" max="65535"></label>
+            <label class="rw"><span>Address to show</span><input id="phone-advertise" placeholder="leave empty to guess" autocomplete="off"></label>
+            <label class="rw"><span>Turn the deck on when Warcry opens</span><input type="checkbox" id="phone-enabled"></label>
+            <label class="rw"><span>No pairing token — anyone on this network can press my buttons</span><input type="checkbox" id="phone-trust"></label>
+          </div>
+        </section>
 
-          <section class="card wide">
-            <h2>Alerts</h2>
-            <ol id="phone-feed" class="feed"></ol>
-            <p id="phone-feed-empty" class="meta">Bites, bags and lures show up here as they happen.</p>
-          </section>
-        </div>
+        <section class="group">
+          <h2>Alerts</h2>
+          <ol id="phone-feed" class="feed"></ol>
+          <p id="phone-feed-empty" class="note">Bites, bags and lures show up here as they happen.</p>
+        </section>
+      </div>
+
+      <div class="tab" id="tab-settings" hidden>
+        <section class="group">
+          <h2>Microphone</h2>
+          <div class="rows">
+            <label class="rw"><span>Input device</span><select id="device"></select></label>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2>Speech</h2>
+          <div class="rows">
+            <label class="rw"><span>Model</span><select id="model"></select></label>
+            <div class="rw" id="model-action" hidden>
+              <span>Not downloaded yet</span>
+              <div class="ctl">
+                <button id="download" class="ghost">Download</button>
+              </div>
+            </div>
+          </div>
+          <div id="progress" class="progress" hidden>
+            <div class="fill"></div>
+            <span></span>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2>Keys</h2>
+          <div class="rows">
+            <label class="rw"><span>How keys reach the target</span><select id="target-mode">
+              <option value="background">in the background, no focus steal</option>
+              <option value="focus_restore">focus it, then give focus back</option>
+              <option value="focus">focus it and leave it focused</option>
+            </select></label>
+          </div>
+          <p class="note">Warcry drives one window at a time. Pick it in the Target menu at the top.</p>
+        </section>
+
+        <section class="group">
+          <h2>World of Warcraft addon <small id="addon-version" class="meta"></small></h2>
+          <div id="addon" class="rows"></div>
+        </section>
+
+        <section class="group">
+          <h2>Startup</h2>
+          <div class="rows">
+            <label class="rw"><span>Start listening when Warcry opens</span><input type="checkbox" id="auto-start"></label>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2>Profiles</h2>
+          <div class="rows">
+            <div class="rw">
+              <span>Files live in your Warcry folder</span>
+              <div class="ctl">
+                <button id="folder" class="ghost">Reveal</button>
+                <button id="new-default" class="ghost">New default</button>
+                <button id="new-starter" class="ghost">New starter</button>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div class="tab" id="tab-log" hidden>
         <pre id="log" class="log"></pre>
       </div>
-    </section>
-  </main>
+    </main>
+
+    <footer class="statusbar">
+      <span id="foot-target" class="meta"></span>
+      <span class="grow"></span>
+      <span id="foot-deck" class="meta"></span>
+    </footer>
+
+    </div>
+  </div>
 
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>

@@ -167,10 +167,6 @@ struct Draft {
     phrase: String,
     hotkey: String,
     keys: String,
-    window: String,
-    process: String,
-    pid: String,
-    mode: String,
     always_active: bool,
     pad: bool,
 }
@@ -182,27 +178,6 @@ impl Draft {
             phrase: command.phrase.clone().unwrap_or_default(),
             hotkey: command.hotkey.clone().unwrap_or_default(),
             keys: keys_of(command).unwrap_or_default(),
-            window: command
-                .target
-                .as_ref()
-                .and_then(|t| t.title.clone())
-                .unwrap_or_default(),
-            process: command
-                .target
-                .as_ref()
-                .and_then(|t| t.process.clone())
-                .unwrap_or_default(),
-            pid: command
-                .target
-                .as_ref()
-                .and_then(|t| t.pid)
-                .map(|pid| pid.to_string())
-                .unwrap_or_default(),
-            mode: command
-                .target
-                .as_ref()
-                .map(|t| mode_name(t.mode))
-                .unwrap_or_else(|| mode_name(TargetMode::default())),
             always_active: command.always_active,
             pad: command.pad,
         }
@@ -215,21 +190,10 @@ impl Draft {
         }
         Key::parse_combo(keys).map_err(fail)?;
         let some = |text: String| Some(text.trim().to_string()).filter(|t| !t.is_empty());
-        let (title, process) = (some(self.window), some(self.process));
         Ok(Command {
             name: some(self.name),
             phrase: some(self.phrase),
             hotkey: some(self.hotkey),
-            target: title
-                .is_some()
-                .then_some(())
-                .or(process.is_some().then_some(()))
-                .map(|()| Target {
-                    title,
-                    process,
-                    mode: parse_mode(&self.mode),
-                    ..Target::default()
-                }),
             always_active: self.always_active,
             pad: self.pad,
             actions: vec![press(keys)],
@@ -263,7 +227,7 @@ fn simple(command: &Command) -> bool {
     keys_of(command).is_some()
         && !command.stop_others
         && !command.no_target
-        && command.target.as_ref().is_none_or(|t| t.class.is_none())
+        && command.target.is_none()
 }
 
 fn mode_name(mode: TargetMode) -> String {
@@ -285,8 +249,10 @@ fn parse_mode(name: &str) -> TargetMode {
 
 #[derive(Serialize)]
 struct TargetView {
-    description: String,
+    title: String,
+    process: String,
     mode: String,
+    pid: Option<u32>,
     found: Option<String>,
 }
 
@@ -373,8 +339,10 @@ fn snapshot(state: State<App>) -> Snapshot {
         profile_name: profile.map(|p| p.name.clone()).filter(|n| !n.is_empty()),
         commands: profile.map(command_views).unwrap_or_default(),
         target: profile.and_then(|p| p.target.as_ref()).map(|t| TargetView {
-            description: t.describe(),
-            mode: format!("{:?}", t.mode),
+            title: t.title.clone().unwrap_or_default(),
+            process: t.process.clone().unwrap_or_default(),
+            mode: mode_name(t.mode),
+            pid: t.pid,
             found: state
                 .probe
                 .lock()
@@ -632,7 +600,7 @@ fn set_config(app: AppHandle, config: Config) -> Result<(), String> {
 fn create_profile(app: AppHandle, example: String) -> Result<(), String> {
     let source = match example.as_str() {
         "starter" => warcry::EXAMPLE_STARTER,
-        _ => warcry::EXAMPLE_FISHING,
+        _ => warcry::EXAMPLE_DEFAULT,
     };
     let name = |n: u32| match n {
         0 => format!("{example}.toml"),
@@ -730,6 +698,34 @@ fn edit_command(app: AppHandle, index: Option<usize>, draft: Draft) -> Result<()
                 Ok(())
             }
         },
+    })
+}
+
+#[tauri::command]
+fn set_target(app: AppHandle, pid: Option<u32>, mode: Option<String>) -> Result<(), String> {
+    let picked = pid.and_then(|pid| {
+        app.state::<App>()
+            .probe
+            .lock()
+            .windows
+            .iter()
+            .find(|w| w.pid == pid)
+            .cloned()
+    });
+    with_profile(&app, move |profile| {
+        let keep = profile.target.as_ref().map(|t| t.mode).unwrap_or_default();
+        let mode = mode.map(|name| parse_mode(&name)).unwrap_or(keep);
+        profile.target = match (pid, picked) {
+            (None, _) => None,
+            (Some(pid), found) => Some(Target {
+                title: found.as_ref().map(|w| w.title.clone()),
+                process: found.as_ref().map(|w| w.process.clone()),
+                pid: Some(pid),
+                mode,
+                ..Target::default()
+            }),
+        };
+        Ok(())
     })
 }
 
@@ -1006,6 +1002,7 @@ fn main() {
             edit_command,
             remove_command,
             target_windows,
+            set_target,
             wow_addon,
             install_addon,
             companion_start,

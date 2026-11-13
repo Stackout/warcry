@@ -68,7 +68,7 @@ enum Cmd {
     #[command(about = "Write an example profile to get started")]
     Init {
         path: Option<PathBuf>,
-        #[arg(long, default_value = "fishing", value_parser = ["fishing", "starter"])]
+        #[arg(long, default_value = "default", value_parser = ["default", "starter"])]
         example: String,
         #[arg(long)]
         force: bool,
@@ -303,7 +303,7 @@ fn list_windows(filter: Option<String>) -> Result<()> {
 fn init(path: PathBuf, example: &str, force: bool) -> Result<()> {
     let src = match example {
         "starter" => warcry::EXAMPLE_STARTER,
-        "fishing" => warcry::EXAMPLE_FISHING,
+        "default" => warcry::EXAMPLE_DEFAULT,
         other => bail!("unknown example {other:?}"),
     };
     ensure!(

@@ -31,20 +31,44 @@ const fill = (select, items, selected) => {
 
 const STATUS = {
   busy: 'Starting…',
-  off: 'Stopped',
+  off: 'Off',
   on: 'Listening',
   paused: 'Paused',
 }
 
-const renderTarget = (target) => {
-  const box = $('target')
-  box.replaceChildren('Whatever window is focused')
-  if (!target) return
-  const found = target.found
-    ? el('span', { className: 'found', textContent: `✓ ${target.found}` })
-    : el('span', { className: 'missing', textContent: 'not open right now' })
-  box.replaceChildren(el('b', { textContent: target.description }), el('br'), found)
+let targets = []
+
+const windowLabel = (w) => `${w.title || w.process} — pid ${w.pid}`
+
+const KEEP = 'keep'
+
+const savedLabel = (target) => `${target.title || target.process || 'saved window'} \u2014 ${
+  target.pid ? 'not running' : 'by title, whichever is open'}`
+
+const chosenValue = (target) => {
+  if (!target) return ''
+  return target.pid && targets.some((w) => w.pid === target.pid) ? String(target.pid) : KEEP
 }
+
+const targetOptions = (target) => [
+  ['', 'whatever window is focused'],
+  ...targets.map((w) => [String(w.pid), windowLabel(w)]),
+  ...(target ? [[KEEP, savedLabel(target)]] : []),
+]
+
+const renderTarget = (target) => {
+  const pick = $('target-pick')
+  if (document.activeElement !== pick) fill(pick, targetOptions(target), chosenValue(target))
+  $('target-mode').value = (target && target.mode) || 'focus_restore'
+  $('target').replaceChildren(...[target && (target.found
+    ? el('span', { className: 'found', textContent: `\u2713 ${target.found}` })
+    : el('span', { className: 'missing', textContent: 'not open right now' }))].filter(Boolean))
+}
+
+const loadTargets = () => call('target_windows').then((found) => {
+  targets = found || []
+  if (state) renderTarget(state.target)
+})
 
 let editing = null
 
@@ -53,19 +77,18 @@ const draftFields = {
   phrase: 'd-phrase',
   keys: 'd-keys',
   hotkey: 'd-hotkey',
-  mode: 'd-mode',
 }
 
 const MAC = (navigator.platform || '').toLowerCase().includes('mac')
 
 const CAP_LABELS = MAC
-  ? { ctrl: '\u2303', alt: '\u2325', shift: '\u21e7', cmd: '\u2318' }
+  ? { ctrl: '⌃', alt: '⌥', shift: '⇧', cmd: '⌘' }
   : { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Win' }
 
 const CAP_GLYPHS = {
-  space: 'Space', enter: '\u21a9', tab: '\u21e5', escape: 'Esc',
-  backspace: '\u232b', delete: 'Del', up: '\u2191', down: '\u2193',
-  left: '\u2190', right: '\u2192', pageup: 'PgUp', pagedown: 'PgDn',
+  space: 'Space', enter: '↩', tab: '⇥', escape: 'Esc',
+  backspace: '⌫', delete: 'Del', up: '↑', down: '↓',
+  left: '←', right: '→', pageup: 'PgUp', pagedown: 'PgDn',
 }
 
 const capLabel = (part) => CAP_LABELS[part] || CAP_GLYPHS[part]
@@ -137,47 +160,15 @@ const armCapture = (id) => {
   input.addEventListener('click', () => capture(input))
 }
 
-const windowOption = (choice) => el('option', {
-  value: String(choice.pid),
-  textContent: `${choice.title || choice.process} — ${choice.process}, pid ${choice.pid}`,
-  dataset: undefined,
-})
-
-const fillWindows = (draft) => call('target_windows').then((choices) => {
-  const pick = $('d-window-pick')
-  const live = choices || []
-  const options = [el('option', { value: '', textContent: 'whatever is focused' })]
-  live.forEach((choice) => {
-    const option = windowOption(choice)
-    option.setAttribute('data-title', choice.title)
-    option.setAttribute('data-process', choice.process)
-    options.push(option)
-  })
-  const saved = draft.pid || ''
-  if (saved && !live.some((c) => String(c.pid) === String(saved))) {
-    const gone = el('option', {
-      value: String(saved),
-      textContent: `${draft.window || 'saved window'} — not running`,
-    })
-    gone.setAttribute('data-title', draft.window || '')
-    gone.setAttribute('data-process', draft.process || '')
-    options.push(gone)
-  }
-  pick.replaceChildren(...options)
-  pick.value = saved
-})
-
 const showEditor = (index, draft) => {
   editing = index
   Object.entries(draftFields).forEach(([key, id]) => ($(id).value = draft[key] || ''))
-  $('d-mode').value = draft.mode || 'background'
   $('d-active').checked = !!draft.always_active
   $('d-pad').checked = !!draft.pad
   $('d-error').textContent = ''
   $('editor').hidden = false
   $('add-command').hidden = true
   $('d-name').focus()
-  fillWindows(draft)
 }
 
 const hideEditor = () => {
@@ -192,10 +183,6 @@ const saveDraft = () => {
   )
   draft.always_active = $('d-active').checked
   draft.pad = $('d-pad').checked
-  const picked = $('d-window-pick').selectedOptions[0]
-  draft.pid = $('d-window-pick').value
-  draft.window = picked ? picked.getAttribute('data-title') || '' : ''
-  draft.process = picked ? picked.getAttribute('data-process') || '' : ''
   invoke('edit_command', { index: editing, draft })
     .then(hideEditor)
     .then(refresh)
@@ -221,33 +208,27 @@ const haystack = (c) => [c.name, c.draft.keys, c.hotkey, ...c.phrases]
   .toLowerCase()
 
 const phraseCell = (c) => el('td', { className: 'say' },
-  ...c.phrases.slice(0, 2).map((phrase) => el('span', { textContent: `\u201c${phrase}\u201d` })),
+  ...c.phrases.slice(0, 2).map((phrase) => el('span', { textContent: `“${phrase}”` })),
   c.more || c.phrases.length > 2
     ? el('span', { className: 'dim', textContent: `+${c.more + Math.max(0, c.phrases.length - 2)} more` })
     : '')
-
-const whereCell = (c) => el('td', { className: 'dim' }, el('span', {
-  textContent: [c.draft.window, c.draft.process].filter(Boolean).join(' / ')
-    || (c.always_active ? 'anywhere, always active' : 'profile default'),
-}))
 
 const commandRow = (c) => el('tr', { hay: haystack(c) },
   el('td', {}, el('strong', { textContent: c.name }),
     c.actions > 1 ? el('span', { className: 'dim', textContent: ` ${c.actions} actions` }) : ''),
   phraseCell(c),
-  el('td', {}, c.draft.keys ? keycaps(c.draft.keys, 'the key this sends into the game') : el('span', { className: 'dim', textContent: '\u2014' })),
-  el('td', {}, c.hotkey ? keycaps(c.hotkey, 'global hotkey', 'hot') : el('span', { className: 'dim', textContent: '\u2014' })),
-  whereCell(c),
+  el('td', {}, c.draft.keys ? keycaps(c.draft.keys, 'the key this sends into the game') : el('span', { className: 'dim', textContent: '—' })),
+  el('td', {}, c.hotkey ? keycaps(c.hotkey, 'global hotkey', 'hot') : el('span', { className: 'dim', textContent: '—' })),
   el('td', { className: 'row-actions' },
     el('button', {
       className: c.pad ? 'on' : '',
       title: c.pad ? 'on your phone' : 'add to your phone',
-      textContent: c.pad ? 'Phone' : 'Phone',
+      textContent: 'Phone',
       onclick: () => call('set_pad', { index: c.index, on: !c.pad }).then(refresh),
     }),
     c.editable
       ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
-      : el('button', { disabled: true, title: 'too detailed to edit here, use Edit profile', textContent: 'Edit' }),
+      : el('button', { disabled: true, title: 'too detailed to edit here, open the file instead', textContent: 'Edit' }),
     el('button', {
       textContent: 'Delete',
       onclick: (event) => removeCommand(event.currentTarget, c),
@@ -267,6 +248,7 @@ const applySearch = () => {
   $('command-count').textContent = needle
     ? `${shown.length} of ${rows.length}`
     : `${rows.length} command${rows.length === 1 ? '' : 's'}`
+  $('command-tally').textContent = rows.length || ''
 }
 
 const renderCommands = (commands) => {
@@ -280,35 +262,38 @@ const flavorName = (label) => {
   return bare.charAt(0).toUpperCase() + bare.slice(1)
 }
 
+const addonRow = (a) => el('div', { className: 'rw' },
+  el('span', { textContent: flavorName(a.label) }),
+  el('span', {
+    className: a.installed === a.bundled ? 'found' : 'meta',
+    textContent: a.installed === a.bundled ? 'up to date' : (a.installed ? `v${a.installed}` : 'not installed'),
+  }),
+)
+
+const installAddon = (button, wanted) => {
+  button.disabled = true
+  Promise.all(wanted.map((a) => invoke('install_addon', { flavor: a.flavor })))
+    .then(() => toast('Addon installed. Restart World of Warcraft.'))
+    .catch((error) => toast(String(error)))
+    .finally(renderAddon)
+}
+
 const renderAddon = () => call('wow_addon').then((installs) => {
   const box = $('addon')
   const list = installs || []
   $('addon-version').textContent = list.length ? `v${list[0].bundled}` : ''
   if (!list.length) {
-    return box.replaceChildren(el('p', { className: 'meta', textContent: 'No World of Warcraft found' }))
+    return box.replaceChildren(el('div', { className: 'rw' }, el('span', { className: 'meta', textContent: 'No World of Warcraft found' })))
   }
   const stale = list.filter((a) => a.installed !== a.bundled)
-  box.replaceChildren(
-    ...list.map((a) => el('div', { className: 'addon-row' },
-      el('span', { textContent: flavorName(a.label) }),
-      el('span', {
-        className: a.installed === a.bundled ? 'found' : 'meta',
-        textContent: a.installed === a.bundled ? 'up to date' : (a.installed ? `v${a.installed}` : 'not installed'),
-      }),
-    )),
-    el('button', {
-      className: stale.length ? 'primary' : 'ghost small',
+  box.replaceChildren(...list.map(addonRow), el('div', { className: 'rw' },
+    el('span', { textContent: stale.length ? 'An update is waiting' : 'Everything is current' }),
+    el('div', { className: 'ctl' }, el('button', {
+      className: stale.length ? 'primary' : 'ghost',
       textContent: stale.length ? `Install into ${stale.length} ${stale.length === 1 ? 'client' : 'clients'}` : 'Reinstall',
-      onclick: (event) => {
-        event.currentTarget.disabled = true
-        const wanted = stale.length ? stale : list
-        Promise.all(wanted.map((a) => invoke('install_addon', { flavor: a.flavor })))
-          .then(() => toast('Addon installed. Restart World of Warcraft.'))
-          .catch((error) => toast(String(error)))
-          .finally(renderAddon)
-      },
-    }),
-  )
+      onclick: (event) => installAddon(event.currentTarget, stale.length ? stale : list),
+    })),
+  ))
 })
 
 const seatRow = (seat) => el('li', {},
@@ -324,6 +309,7 @@ const renderPhone = (s) => {
   $('phone-state').textContent = live.running
     ? `on, hearing ${live.hearing} window${live.hearing === 1 ? '' : 's'}`
     : 'off'
+  $('foot-deck').textContent = live.running ? `phone deck on · ${live.url || ''}` : 'phone deck off'
   $('phone-power').textContent = live.running ? 'Turn off' : 'Turn on'
   $('phone-power').className = live.running ? 'ghost' : 'primary'
   $('phone-pair').hidden = !live.running
@@ -342,6 +328,12 @@ const renderPhone = (s) => {
   $('phone-speak').checked = s.deck.speak
 }
 
+const footTarget = (t) => [
+  t.title || t.process || 'window',
+  t.pid && `pid ${t.pid}`,
+  !t.found && 'not open',
+].filter(Boolean).join(' · ')
+
 const render = (s) => {
   state = s
   if (s.failure) toast(s.failure)
@@ -350,23 +342,19 @@ const render = (s) => {
   $('status').querySelector('b').textContent = STATUS[mode]
   $('ptt').hidden = !s.push_to_talk
   $('ptt').textContent = `Hold ${s.push_to_talk} to talk`
-  const power = $('power')
-  power.querySelector('span').textContent = { true: 'Stop', false: 'Start' }[s.running]
-  power.classList.toggle('stop', s.running)
-  power.disabled = s.busy || !s.profile
-  $('listening').checked = s.listening
-  $('listening').disabled = !s.running
-  $('profile-name').textContent = s.profile_name || (s.profile ? basename(s.profile) : 'No profile yet')
+  $('listening').checked = s.running && s.listening
+  $('listening').disabled = s.busy || !s.profile
   fill($('profile'), s.profiles.map((p) => [p, basename(p)]), s.profile)
   $('profile').hidden = !s.profiles.length
   $('edit').disabled = !s.profile
   $('profile-error').hidden = !s.profile_error
   $('profile-error').textContent = s.profile_error || ''
   renderTarget(s.target)
+  $('foot-target').textContent = s.target ? footTarget(s.target) : 'no target window'
   fill($('device'), [['', 'System default'], ...s.devices.map((d) => [d, d])], s.config.device || '')
-  fill($('model'), s.models.map((m) => [m.name, `${m.name}${m.downloaded ? '' : ' ↓'} · ${m.about}`]), s.model)
+  fill($('model'), s.models.map((m) => [m.name, `${m.name} · ${m.about}`]), s.model)
   const current = s.models.find((m) => m.name === s.model)
-  $('download').hidden = !current || current.downloaded || !$('progress').hidden
+  $('model-action').hidden = !current || current.downloaded || !$('progress').hidden
   $('auto-start').checked = s.config.auto_start
   $('welcome').hidden = Boolean(s.profile)
   $('feed-empty').hidden = !s.profile || $('feed').children.length > 0
@@ -435,7 +423,7 @@ const showProgress = (note) => {
   const box = $('progress')
   const done = note.total > 0 && note.read >= note.total
   box.hidden = done
-  $('download').hidden = true
+  $('model-action').hidden = true
   box.querySelector('.fill').style.width = `${(note.read / Math.max(note.total, 1)) * 100}%`
   box.querySelector('span').textContent = `Downloading ${note.model} · ${note.read >> 20} / ${note.total >> 20} MB`
   if (done) refresh()
@@ -464,13 +452,21 @@ listen('log', ({ payload }) => appendLog(payload))
 listen('changed', refresh)
 listen('failure', refresh)
 
-$('power').addEventListener('click', () => {
-  const command = { true: 'stop', false: 'start' }[state.running]
-  render({ ...state, busy: !state.running })
-  call(command).finally(refresh)
-})
-$('listening').addEventListener('change', (e) => call('set_listening', { on: e.target.checked }).then(refresh))
+const setListening = (on) => {
+  if (on && !state.running) {
+    render({ ...state, busy: true })
+    return call('start').then(() => call('set_listening', { on: true })).finally(refresh)
+  }
+  call('set_listening', { on }).then(refresh)
+}
+
+const retarget = (pid, mode) => call('set_target', { pid, mode }).then(refresh)
+
+$('listening').addEventListener('change', (e) => setListening(e.target.checked))
 $('profile').addEventListener('change', (e) => saveConfig({ profile: e.target.value }))
+$('target-pick').addEventListener('change', (e) => e.target.value === KEEP
+  || retarget(Number(e.target.value) || null, $('target-mode').value))
+$('target-mode').addEventListener('change', (e) => retarget(state.target && state.target.pid, e.target.value))
 $('device').addEventListener('change', (e) => saveConfig({ device: e.target.value || null }))
 $('model').addEventListener('change', (e) => saveConfig({ model: e.target.value }))
 $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.target.checked }))
@@ -479,15 +475,14 @@ $('edit').addEventListener('click', () => call('open_profile'))
 $('command-search').addEventListener('input', applySearch)
 armCapture('d-keys')
 armCapture('d-hotkey')
-$('add-command').addEventListener('click', () => showEditor(null, { mode: 'background' }))
-renderAddon()
+$('add-command').addEventListener('click', () => showEditor(null, {}))
 $('d-save').addEventListener('click', saveDraft)
 $('d-cancel').addEventListener('click', hideEditor)
 $('folder').addEventListener('click', () => call('open_folder'))
 const create = (example) => call('create_profile', { example }).then(refresh)
-$('new-fishing').addEventListener('click', () => create('fishing'))
+$('new-default').addEventListener('click', () => create('default'))
 $('new-starter').addEventListener('click', () => create('starter'))
-$('welcome-fishing').addEventListener('click', () => create('fishing'))
+$('welcome-default').addEventListener('click', () => create('default'))
 
 $('phone-power').addEventListener('click', (event) => {
   event.currentTarget.disabled = true
@@ -516,10 +511,15 @@ $('try').addEventListener('submit', (e) => {
   call('try_phrase', { text }).then((result) => { $('try-result').textContent = result })
 })
 
-document.querySelectorAll('.tabs button').forEach((button) => button.addEventListener('click', () => {
-  document.querySelectorAll('.tabs button').forEach((b) => b.classList.toggle('active', b === button))
+const RAIL = [...document.querySelectorAll('.rail button[data-tab]')]
+RAIL.forEach((button) => button.addEventListener('click', () => {
+  RAIL.forEach((b) => b.classList.toggle('active', b === button))
   document.querySelectorAll('.tab').forEach((tab) => { tab.hidden = tab.id !== `tab-${button.dataset.tab}` })
+  $('view').textContent = button.querySelector('em').textContent
 }))
 
+renderAddon()
+loadTargets()
 refresh()
 setInterval(() => document.hidden || refresh(), 4000)
+setInterval(() => document.hidden || loadTargets(), 4000)

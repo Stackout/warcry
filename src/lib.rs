@@ -13,5 +13,5 @@ pub mod speech_out;
 pub mod stt;
 pub mod window;
 
-pub const EXAMPLE_FISHING: &str = include_str!("../profiles/fishing.toml");
+pub const EXAMPLE_DEFAULT: &str = include_str!("../profiles/default.toml");
 pub const EXAMPLE_STARTER: &str = include_str!("../profiles/starter.toml");
