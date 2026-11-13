@@ -130,34 +130,39 @@ const comboOf = (event) => {
   return parts.join('+')
 }
 
-const capture = (input) => {
-  const stop = () => {
-    input.classList.remove('listening')
-    input.placeholder = input.dataset.hint || ''
-    document.removeEventListener('keydown', onKey, true)
+const repaints = []
+
+const armCapture = (id, hint) => {
+  const input = $(id)
+  if (!input) return
+  input.hidden = true
+  const slot = el('span', { className: 'slot' })
+  const field = el('button', { type: 'button', className: 'keyfield' }, slot)
+  const wipe = el('button', { type: 'button', className: 'keyclear', textContent: '\u00d7', title: 'clear' })
+  const paint = () => {
+    field.classList.remove('arming')
+    slot.replaceChildren(input.value ? keycaps(input.value) : el('em', { textContent: hint }))
+    wipe.hidden = !input.value
+  }
+  const set = (value) => {
+    input.value = value
+    paint()
   }
   const onKey = (event) => {
     event.preventDefault()
     event.stopPropagation()
-    if (event.code === 'Escape') return stop()
-    const combo = comboOf(event)
-    if (!combo) return
-    input.value = combo
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    stop()
+    document.removeEventListener('keydown', onKey, true)
+    set((event.code === 'Escape' ? null : comboOf(event)) || input.value)
   }
-  input.dataset.hint = input.dataset.hint || input.placeholder
-  input.placeholder = 'press any key…'
-  input.classList.add('listening')
-  document.addEventListener('keydown', onKey, true)
-}
-
-const armCapture = (id) => {
-  const input = $(id)
-  if (!input) return
-  input.readOnly = true
-  input.addEventListener('focus', () => capture(input))
-  input.addEventListener('click', () => capture(input))
+  field.addEventListener('click', () => {
+    field.classList.add('arming')
+    slot.replaceChildren(el('em', { textContent: 'press any key\u2026' }))
+    document.addEventListener('keydown', onKey, true)
+  })
+  wipe.addEventListener('click', () => set(''))
+  input.after(el('span', { className: 'keyrow' }, field, wipe))
+  repaints.push(paint)
+  paint()
 }
 
 const showEditor = (index, draft) => {
@@ -165,6 +170,7 @@ const showEditor = (index, draft) => {
   Object.entries(draftFields).forEach(([key, id]) => ($(id).value = draft[key] || ''))
   $('d-active').checked = !!draft.always_active
   $('d-pad').checked = !!draft.pad
+  repaints.forEach((paint) => paint())
   $('d-error').textContent = ''
   $('editor').hidden = false
   $('add-command').hidden = true
@@ -473,16 +479,50 @@ $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.tar
 $('download').addEventListener('click', () => call('download_model', { name: state.model }).finally(refresh))
 $('edit').addEventListener('click', () => call('open_profile'))
 $('command-search').addEventListener('input', applySearch)
-armCapture('d-keys')
-armCapture('d-hotkey')
+armCapture('d-keys', 'click, then press the key')
+armCapture('d-hotkey', 'none')
 $('add-command').addEventListener('click', () => showEditor(null, {}))
 $('d-save').addEventListener('click', saveDraft)
 $('d-cancel').addEventListener('click', hideEditor)
 $('folder').addEventListener('click', () => call('open_folder'))
-const create = (example) => call('create_profile', { example }).then(refresh)
-$('new-default').addEventListener('click', () => create('default'))
-$('new-starter').addEventListener('click', () => create('starter'))
-$('welcome-default').addEventListener('click', () => create('default'))
+
+const profileError = (error) => {
+  $('p-error').hidden = !error
+  $('p-error').textContent = error || ''
+  $('p-error').className = error ? 'missing' : 'note'
+}
+
+const profileCall = (command, args) => invoke(command, args)
+  .then(() => profileError(''))
+  .then(refresh)
+  .catch((error) => profileError(String(error)))
+
+$('p-create').addEventListener('click', () => profileCall('create_profile', {
+  name: $('p-new').value,
+  example: $('p-from').value,
+}).then(() => ($('p-new').value = '')))
+$('p-rename-go').addEventListener('click', () => profileCall('rename_profile', {
+  name: $('p-rename').value,
+}).then(() => ($('p-rename').value = '')))
+$('p-delete').addEventListener('click', (event) => {
+  const button = event.currentTarget
+  if (button.dataset.sure !== 'yes') {
+    button.dataset.sure = 'yes'
+    button.textContent = 'Really delete it?'
+    setTimeout(() => {
+      button.dataset.sure = ''
+      button.textContent = 'Delete this profile'
+    }, 4000)
+    return
+  }
+  button.dataset.sure = ''
+  button.textContent = 'Delete this profile'
+  profileCall('delete_profile')
+})
+$('welcome-default').addEventListener('click', () => profileCall('create_profile', {
+  name: 'default',
+  example: 'default',
+}))
 
 $('phone-power').addEventListener('click', (event) => {
   event.currentTarget.disabled = true
@@ -517,6 +557,244 @@ RAIL.forEach((button) => button.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach((tab) => { tab.hidden = tab.id !== `tab-${button.dataset.tab}` })
   $('view').textContent = button.querySelector('em').textContent
 }))
+
+const SLASH = [
+  ['#showtooltip', 'Show the icon and tooltip of whatever this macro would cast right now. Put it on the first line.'],
+  ['/cast', 'Cast a spell by name. /cast [@party1,help,nodead] Healing Touch'],
+  ['/castsequence', 'Cast spells in order, one per press. /castsequence reset=10 Moonfire, Wrath'],
+  ['/castrandom', 'Cast one of several spells at random.'],
+  ['/use', 'Use an item by name, bag slot or equipment slot. /use 13 is your first trinket.'],
+  ['/target', 'Target a unit by name or unit id. /target [@focus]'],
+  ['/focus', 'Set your focus to the current target. /focus [@mouseover]'],
+  ['/clearfocus', 'Drop your focus.'],
+  ['/assist', 'Target whatever your target is targeting.'],
+  ['/startattack', 'Begin auto-attack without a new swing timer.'],
+  ['/stopattack', 'Stop auto-attack.'],
+  ['/stopcasting', 'Cancel the spell you are casting. Put it before a cast you want to cut in.'],
+  ['/stopmacro', 'Stop here and ignore the rest of this macro. /stopmacro [nocombat]'],
+  ['/cancelaura', 'Remove one of your own buffs by name. /cancelaura Bear Form'],
+  ['/cancelform', 'Leave your current shapeshift form.'],
+  ['/dismount', 'Get off your mount.'],
+  ['/equip', 'Equip an item by name.'],
+  ['/equipslot', 'Equip an item into a numbered slot. /equipslot 16 Thunderfury'],
+  ['/petattack', 'Send your pet at the target.'],
+  ['/petfollow', 'Call your pet back to you.'],
+  ['/petpassive', 'Put your pet on passive.'],
+  ['/petdefensive', 'Put your pet on defensive.'],
+  ['/click', 'Press a button on the interface by its frame name. /click WarcryBeaconButton'],
+  ['/run', 'Run Lua. It cannot cast spells or do anything the game protects.'],
+  ['/say', 'Say something out loud.'],
+  ['/party', 'Say something in party chat.'],
+  ['/raid', 'Say something in raid chat.'],
+  ['/emote', 'Perform a custom emote.'],
+]
+
+const CONDITIONS = [
+  ['@party1', 'Act on party member 1 without changing your target. Also party2-4, raid1-40.'],
+  ['@player', 'Act on yourself.'],
+  ['@pet', 'Act on your pet.'],
+  ['@focus', 'Act on your focus.'],
+  ['@mouseover', 'Act on whatever is under your cursor, including a unit frame.'],
+  ['@target', 'Act on your current target.'],
+  ['@targettarget', "Act on your target's target."],
+  ['@none', 'Act on nothing, which turns a cast into a ground-targeted one.'],
+  ['help', 'The unit is friendly and you can help it.'],
+  ['harm', 'The unit is hostile and you can attack it.'],
+  ['exists', 'The unit exists at all.'],
+  ['dead', 'The unit is dead.'],
+  ['nodead', 'The unit is alive. Pair it with help so a heal never lands on a corpse.'],
+  ['noexists', 'The unit is not there.'],
+  ['nohelp', 'The unit is not friendly.'],
+  ['noharm', 'The unit is not attackable.'],
+  ['combat', 'You are in combat.'],
+  ['nocombat', 'You are out of combat.'],
+  ['mod', 'Any modifier key is held.'],
+  ['mod:shift', 'Shift is held. Also mod:ctrl and mod:alt.'],
+  ['nomod', 'No modifier key is held.'],
+  ['stance:1', 'You are in that stance or form. 0 is caster form. Also form:1.'],
+  ['stealth', 'You are stealthed.'],
+  ['nostealth', 'You are not stealthed.'],
+  ['mounted', 'You are mounted.'],
+  ['nomounted', 'You are not mounted.'],
+  ['flying', 'You are flying.'],
+  ['noflying', 'You are not flying.'],
+  ['swimming', 'You are swimming.'],
+  ['indoors', 'You are indoors.'],
+  ['outdoors', 'You are outdoors.'],
+  ['casting', 'You are casting something.'],
+  ['nocasting', 'You are not casting.'],
+  ['channeling', 'You are channeling. channeling:Tranquility names the spell.'],
+  ['nochanneling', 'You are not channeling. nochanneling:Drain Life names the spell.'],
+  ['known', 'You know the spell. known:Thorns names it.'],
+  ['spec:1', 'That specialisation is active.'],
+  ['group', 'You are in a group. group:raid and group:party narrow it.'],
+  ['nogroup', 'You are on your own.'],
+  ['pet', 'You have a pet out. pet:Bear names it.'],
+  ['nopet', 'You have no pet out.'],
+  ['button:1', 'Which mouse button pressed the key. 1 is left, 2 is right.'],
+  ['equipped:Shields', 'You have that kind of item equipped.'],
+  ['talent:1/1', 'That talent is chosen, by row and column.'],
+]
+
+const hintBox = () => $('m-hints')
+
+let hints = { items: [], at: 0, start: 0, end: 0 }
+
+const wordAt = (text, caret) => {
+  const before = text.slice(0, caret)
+  const open = before.lastIndexOf('[')
+  const shut = before.lastIndexOf(']')
+  const inside = open > shut
+  const edge = inside ? Math.max(open, before.lastIndexOf(','), before.lastIndexOf(' ')) : Math.max(before.lastIndexOf(' '), before.lastIndexOf('\n'))
+  return { word: before.slice(edge + 1), start: edge + 1, inside }
+}
+
+const suggestionsFor = (word, inside) => {
+  const table = inside ? CONDITIONS : SLASH
+  const needle = word.toLowerCase()
+  if (!inside && !word.startsWith('/') && !word.startsWith('#')) return []
+  if (!needle) return inside ? table : []
+  const opens = table.filter(([text]) => text.toLowerCase().startsWith(needle))
+  const anywhere = () => table.filter(([text]) => text.toLowerCase().includes(needle))
+  return opens.length || needle.length < 3 ? opens : anywhere()
+}
+
+const drawHints = () => {
+  const box = hintBox()
+  box.hidden = !hints.items.length
+  box.replaceChildren(...hints.items.map(([text, about], i) => el('div', {
+    className: i === hints.at ? 'hit on' : 'hit',
+    onmousedown: (event) => { event.preventDefault(); takeHint(i) },
+  }, el('code', { textContent: text }), el('span', { textContent: about }))))
+  const picked = box.children[hints.at]
+  if (picked) picked.scrollIntoView({ block: 'nearest' })
+}
+
+const offerHints = () => {
+  const body = $('m-body')
+  const { word, start, inside } = wordAt(body.value, body.selectionStart)
+  hints = { items: suggestionsFor(word, inside).slice(0, 8), at: 0, start, end: body.selectionStart }
+  drawHints()
+}
+
+const takeHint = (index) => {
+  const body = $('m-body')
+  const [text] = hints.items[index] || []
+  if (!text) return
+  body.value = body.value.slice(0, hints.start) + text + body.value.slice(hints.end)
+  const caret = hints.start + text.length
+  body.setSelectionRange(caret, caret)
+  hideHints()
+  countBody()
+  body.focus()
+}
+
+const hideHints = () => {
+  hints = { items: [], at: 0, start: 0, end: 0 }
+  hintBox().hidden = true
+}
+
+const MOVES = {
+  ArrowDown: (step) => step + 1,
+  ArrowUp: (step) => step - 1,
+}
+
+const onHintKey = (event) => {
+  if (!hints.items.length) return
+  const move = MOVES[event.key]
+  if (move) {
+    event.preventDefault()
+    hints.at = (move(hints.at) + hints.items.length) % hints.items.length
+    return drawHints()
+  }
+  if (event.key === 'Escape') return hideHints()
+  if (event.key !== 'Enter' && event.key !== 'Tab') return
+  event.preventDefault()
+  takeHint(hints.at)
+}
+
+const countBody = () => {
+  const used = $('m-body').value.length
+  $('m-count').textContent = `${used} / 255`
+  $('m-count').className = used > 255 ? 'missing' : 'meta'
+}
+
+let draftAt = null
+
+const copyMacro = (button, text) => navigator.clipboard.writeText(text)
+  .then(() => toast('Copied. Paste it into the game with /macro.'))
+  .catch(() => toast('Could not reach the clipboard'))
+
+const macroRow = (m, actions) => el('tr', {},
+  el('td', {}, el('strong', { textContent: m.name })),
+  el('td', {}, el('pre', { className: 'macro-body', textContent: m.body })),
+  el('td', { className: 'row-actions' }, ...actions),
+)
+
+const renderGameMacros = (list) => {
+  $('macro-tally').textContent = list.length ? `${list.length}` : ''
+  $('macro-empty').hidden = list.length > 0
+  $('macro-rows').replaceChildren(...list.map((m) => macroRow(m, [
+    el('button', { textContent: 'Copy', onclick: (e) => copyMacro(e.currentTarget, m.body) }),
+    el('button', { textContent: 'Edit here', onclick: () => editDraft(null, m) }),
+  ])))
+}
+
+const editDraft = (index, draft) => {
+  draftAt = index
+  $('m-name').value = (draft.name || '').slice(0, 16)
+  $('m-body').value = draft.body || ''
+  $('m-error').textContent = ''
+  countBody()
+  $('m-name').focus()
+}
+
+const renderDrafts = (list) => {
+  $('draft-tally').textContent = list.length ? `${list.length}` : ''
+  $('drafts-empty').hidden = list.length > 0
+  $('drafts').replaceChildren(...list.map((m, index) => macroRow(m, [
+    el('button', { textContent: 'Copy', onclick: (e) => copyMacro(e.currentTarget, m.body) }),
+    el('button', { textContent: 'Edit', onclick: () => editDraft(index, m) }),
+    el('button', { textContent: 'Delete', onclick: () => call('remove_macro', { index }).then(loadDrafts) }),
+  ])))
+}
+
+const loadDrafts = () => call('macro_drafts').then(renderDrafts)
+
+const whoLabel = (c) => [c.name, c.realm, `${c.flavor} · ${c.account}`].filter(Boolean).join(' · ')
+
+const loadCharacters = () => call('wow_characters').then((found) => {
+  const list = found || []
+  const pick = $('macro-who')
+  const keep = pick.value
+  fill(pick, list.map((c) => [c.id, `${whoLabel(c)} — ${c.macros} macro${c.macros === 1 ? '' : 's'}`]), keep)
+  if (!list.length) return renderGameMacros([])
+  if (!list.some((c) => c.id === keep)) pick.value = list[0].id
+  return loadGameMacros()
+})
+
+const loadGameMacros = () => {
+  const id = $('macro-who').value
+  return id ? call('wow_macros', { id }).then(renderGameMacros) : renderGameMacros([])
+}
+
+const saveMacro = () => {
+  const draft = { name: $('m-name').value.trim(), body: $('m-body').value }
+  invoke('save_macro', { index: draftAt, draft })
+    .then(() => { draftAt = null; $('m-name').value = ''; $('m-body').value = ''; countBody() })
+    .then(loadDrafts)
+    .catch((error) => ($('m-error').textContent = String(error)))
+}
+
+$('m-body').addEventListener('input', () => { countBody(); offerHints() })
+$('m-body').addEventListener('keydown', onHintKey)
+$('m-body').addEventListener('blur', hideHints)
+$('m-save').addEventListener('click', saveMacro)
+$('m-new').addEventListener('click', () => editDraft(null, {}))
+$('macro-who').addEventListener('change', loadGameMacros)
+loadCharacters()
+loadDrafts()
+countBody()
 
 renderAddon()
 loadTargets()

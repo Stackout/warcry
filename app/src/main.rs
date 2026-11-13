@@ -2,12 +2,13 @@
 
 mod addon;
 mod companion;
+mod macros;
 
 use anyhow::{Context, Result, anyhow, ensure};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 use tauri::image::Image;
@@ -596,25 +597,84 @@ fn set_config(app: AppHandle, config: Config) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn create_profile(app: AppHandle, example: String) -> Result<(), String> {
-    let source = match example.as_str() {
-        "starter" => warcry::EXAMPLE_STARTER,
-        _ => warcry::EXAMPLE_DEFAULT,
-    };
-    let name = |n: u32| match n {
-        0 => format!("{example}.toml"),
-        n => format!("{example}-{n}.toml"),
-    };
-    let path = (0..)
-        .map(|n| home().join(name(n)))
-        .find(|p| !p.exists())
-        .unwrap_or_default();
-    std::fs::create_dir_all(home())
-        .and_then(|_| std::fs::write(&path, source))
-        .map_err(|e| e.to_string())?;
+fn slug(name: &str) -> String {
+    let swapped: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| match c.is_alphanumeric() {
+            true => c,
+            false => '-',
+        })
+        .collect();
+    swapped
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn free_path(name: &str) -> Result<PathBuf, String> {
+    let slug = slug(name);
+    if slug.is_empty() {
+        return Err("give the profile a name".into());
+    }
+    let path = home().join(format!("{slug}.toml"));
+    match path.exists() {
+        true => Err(format!("{slug}.toml already exists")),
+        false => Ok(path),
+    }
+}
+
+fn source_of(app: &AppHandle, example: &str) -> Result<String, String> {
+    match example {
+        "starter" => Ok(warcry::EXAMPLE_STARTER.to_string()),
+        "copy" => profile_path(app)
+            .and_then(|path| std::fs::read_to_string(path).map_err(|e| e.to_string())),
+        _ => Ok(warcry::EXAMPLE_DEFAULT.to_string()),
+    }
+}
+
+fn write_named(path: &Path, source: &str, name: &str) -> Result<(), String> {
+    let mut profile = Profile::parse(source).map_err(fail)?;
+    profile.name = name.trim().to_string();
+    std::fs::create_dir_all(home()).map_err(|e| e.to_string())?;
+    profile.save(path).map_err(fail)
+}
+
+fn switch_to(app: AppHandle, path: PathBuf) -> Result<(), String> {
     let config = Config {
         profile: Some(path),
+        ..app.state::<App>().config.lock().clone()
+    };
+    set_config(app, config)
+}
+
+#[tauri::command]
+fn create_profile(app: AppHandle, name: String, example: String) -> Result<(), String> {
+    let path = free_path(&name)?;
+    let source = source_of(&app, &example)?;
+    write_named(&path, &source, &name)?;
+    switch_to(app, path)
+}
+
+#[tauri::command]
+fn rename_profile(app: AppHandle, name: String) -> Result<(), String> {
+    let old = profile_path(&app)?;
+    let path = free_path(&name)?;
+    let source = std::fs::read_to_string(&old).map_err(|e| e.to_string())?;
+    write_named(&path, &source, &name)?;
+    std::fs::remove_file(&old).map_err(|e| e.to_string())?;
+    switch_to(app, path)
+}
+
+#[tauri::command]
+fn delete_profile(app: AppHandle) -> Result<(), String> {
+    let doomed = profile_path(&app)?;
+    std::fs::remove_file(&doomed).map_err(|e| e.to_string())?;
+    let next = profiles().into_iter().find(|p| p != &doomed);
+    let config = Config {
+        profile: next,
         ..app.state::<App>().config.lock().clone()
     };
     set_config(app, config)
@@ -699,6 +759,42 @@ fn edit_command(app: AppHandle, index: Option<usize>, draft: Draft) -> Result<()
             }
         },
     })
+}
+
+#[tauri::command]
+fn wow_characters() -> Vec<macros::Character> {
+    macros::characters()
+}
+
+#[tauri::command]
+fn wow_macros(id: String) -> Result<Vec<macros::Macro>, String> {
+    macros::macros_of(&id).map_err(fail)
+}
+
+#[tauri::command]
+fn macro_drafts() -> Vec<macros::Draft> {
+    macros::drafts(&home())
+}
+
+#[tauri::command]
+fn save_macro(index: Option<usize>, draft: macros::Draft) -> Result<(), String> {
+    macros::check(&draft).map_err(fail)?;
+    let mut all = macros::drafts(&home());
+    match index.and_then(|at| all.get_mut(at)) {
+        Some(slot) => *slot = draft,
+        None => all.push(draft),
+    }
+    macros::save(&home(), &all).map_err(fail)
+}
+
+#[tauri::command]
+fn remove_macro(index: usize) -> Result<(), String> {
+    let mut all = macros::drafts(&home());
+    if index >= all.len() {
+        return Err(format!("there is no macro {index} to remove"));
+    }
+    all.remove(index);
+    macros::save(&home(), &all).map_err(fail)
 }
 
 #[tauri::command]
@@ -995,6 +1091,8 @@ fn main() {
             set_listening,
             set_config,
             create_profile,
+            rename_profile,
+            delete_profile,
             open_profile,
             open_folder,
             download_model,
@@ -1003,6 +1101,11 @@ fn main() {
             remove_command,
             target_windows,
             set_target,
+            wow_characters,
+            wow_macros,
+            macro_drafts,
+            save_macro,
+            remove_macro,
             wow_addon,
             install_addon,
             companion_start,
