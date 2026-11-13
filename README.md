@@ -10,7 +10,7 @@ Warcry is an open-source, cross-platform voice command engine for games and apps
 $ warcry run fishing.toml
   INFO speech model ~/.local/share/warcry/models/ggml-base.en.bin
   INFO microphone "Blue Yeti" at 48000 Hz
-  INFO targeting window title~"Minecraft" (FocusRestore)
+  INFO targeting window title~"World of Warcraft" (FocusRestore)
   INFO ready. Ctrl+C to quit
   INFO ▶ cast  (heard "Cast the line.", 100%)
   INFO ▶ reel  (heard "Reel it in!", 100%)
@@ -89,7 +89,7 @@ min_confidence = 0.75
 push_to_talk = "ctrl+alt"
 
 [target]
-title = "Minecraft"
+title = "World of Warcraft"
 mode = "focus_restore"
 
 [[command]]

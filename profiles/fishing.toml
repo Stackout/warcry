@@ -5,7 +5,7 @@ min_confidence = 0.75
 push_to_talk_mode = "hold"
 
 [target]
-title = "Minecraft"
+title = "World of Warcraft"
 mode = "focus_restore"
 
 [[command]]
@@ -95,3 +95,105 @@ phrase = "[start;resume] listening;wake up"
 no_target = true
 always_active = true
 actions = [{ do = "listening", state = "on" }, { do = "say", text = "listening" }]
+
+[[command]]
+name = "heal hunter"
+phrase = "[heal;heel] [my;the;] hunter"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+1" }]
+
+[[command]]
+name = "heal druid"
+phrase = "[heal;heel] [me;druid]"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+2" }]
+
+[[command]]
+name = "heal pet"
+phrase = "[heal;heel] [my;the;] pet"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+3" }]
+
+[[command]]
+name = "rejuv hunter"
+phrase = "[rejuv;rejuvenate;rejuvenation] [my;the;] hunter"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+4" }]
+
+[[command]]
+name = "rejuv druid"
+phrase = "[rejuv;rejuvenate;rejuvenation] [me;druid]"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+5" }]
+
+[[command]]
+name = "rejuv pet"
+phrase = "[rejuv;rejuvenate;rejuvenation] [my;the;] pet"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+6" }]
+
+[[command]]
+name = "regrowth hunter"
+phrase = "[regrowth;regrow] [my;the;] hunter"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+7" }]
+
+[[command]]
+name = "regrowth druid"
+phrase = "[regrowth;regrow] [me;druid]"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+8" }]
+
+[[command]]
+name = "regrowth pet"
+phrase = "[regrowth;regrow] [my;the;] pet"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+alt+9" }]
+
+[[command]]
+name = "thorns hunter"
+phrase = "thorns [on;] [my;the;] hunter"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+1" }]
+
+[[command]]
+name = "thorns druid"
+phrase = "thorns [on;] [me;druid]"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+2" }]
+
+[[command]]
+name = "thorns pet"
+phrase = "thorns [on;] [my;the;] pet"
+pad = true
+actions = [{ do = "combo", keys = "ctrl+3" }]
+
+[[command]]
+name = "soothe"
+phrase = "[soothe;sooth] [animal;target;it;]"
+pad = true
+actions = [{ do = "press", key = "c" }]
+
+[[command]]
+name = "hibernate"
+phrase = "hibernate [target;it;them;]"
+pad = true
+actions = [{ do = "combo", keys = "shift+c" }]
+
+[[command]]
+name = "natures grasp"
+phrase = "natures grasp;grasp"
+pad = true
+actions = [{ do = "combo", keys = "alt+c" }]
+
+[[command]]
+name = "skysight"
+phrase = "[sky sight;skysight;sky]"
+pad = true
+actions = [{ do = "press", key = "7" }]
+
+[[command]]
+name = "follow"
+phrase = "follow [me;]"
+pad = true
+actions = [{ do = "press", key = "f" }]
