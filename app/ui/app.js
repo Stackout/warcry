@@ -589,7 +589,7 @@ const SLASH = [
   ['/emote', 'Perform a custom emote.'],
 ]
 
-const CONDITIONS = [
+const STATES = [
   ['@party1', 'Act on party member 1 without changing your target. Also party2-4, raid1-40.'],
   ['@player', 'Act on yourself.'],
   ['@pet', 'Act on your pet.'],
@@ -602,38 +602,41 @@ const CONDITIONS = [
   ['harm', 'The unit is hostile and you can attack it.'],
   ['exists', 'The unit exists at all.'],
   ['dead', 'The unit is dead.'],
-  ['nodead', 'The unit is alive. Pair it with help so a heal never lands on a corpse.'],
-  ['noexists', 'The unit is not there.'],
-  ['nohelp', 'The unit is not friendly.'],
-  ['noharm', 'The unit is not attackable.'],
   ['combat', 'You are in combat.'],
-  ['nocombat', 'You are out of combat.'],
   ['mod', 'Any modifier key is held.'],
   ['mod:shift', 'Shift is held. Also mod:ctrl and mod:alt.'],
-  ['nomod', 'No modifier key is held.'],
   ['stance:1', 'You are in that stance or form. 0 is caster form. Also form:1.'],
   ['stealth', 'You are stealthed.'],
-  ['nostealth', 'You are not stealthed.'],
   ['mounted', 'You are mounted.'],
-  ['nomounted', 'You are not mounted.'],
   ['flying', 'You are flying.'],
-  ['noflying', 'You are not flying.'],
   ['swimming', 'You are swimming.'],
   ['indoors', 'You are indoors.'],
   ['outdoors', 'You are outdoors.'],
   ['casting', 'You are casting something.'],
-  ['nocasting', 'You are not casting.'],
   ['channeling', 'You are channeling. channeling:Tranquility names the spell.'],
-  ['nochanneling', 'You are not channeling. nochanneling:Drain Life names the spell.'],
   ['known', 'You know the spell. known:Thorns names it.'],
   ['spec:1', 'That specialisation is active.'],
   ['group', 'You are in a group. group:raid and group:party narrow it.'],
-  ['nogroup', 'You are on your own.'],
   ['pet', 'You have a pet out. pet:Bear names it.'],
-  ['nopet', 'You have no pet out.'],
   ['button:1', 'Which mouse button pressed the key. 1 is left, 2 is right.'],
   ['equipped:Shields', 'You have that kind of item equipped.'],
   ['talent:1/1', 'That talent is chosen, by row and column.'],
+]
+
+const PHRASED = {
+  nodead: 'The unit is alive. Pair it with help so a heal never lands on a corpse.',
+  nomod: 'No modifier key is held.',
+  nocombat: 'You are out of combat.',
+}
+
+const negated = ([text]) => {
+  const key = `no${text}`
+  return [key, PHRASED[key] || `The opposite of ${text}.`]
+}
+
+const CONDITIONS = [
+  ...STATES,
+  ...STATES.filter(([text]) => !text.startsWith('@')).map(negated),
 ]
 
 const hintBox = () => $('m-hints')
