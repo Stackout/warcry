@@ -77,7 +77,9 @@ pub fn focus(w: &WindowInfo) -> Result<()> {
             .flatten()
             .is_some_and(|a| a.pid == w.pid && a.title == w.title)
     });
-    (!focused).then(|| tracing::debug!("{w} did not report focus within 300ms"));
+    (!focused).then(|| {
+        tracing::warn!("{w} did not take focus within 300ms; the keys may have gone elsewhere")
+    });
     Ok(())
 }
 
