@@ -215,22 +215,39 @@ const removeCommand = (button, c) => {
   call('remove_command', { index: c.index }).then(refresh)
 }
 
-const commandRow = (c) => el('li', {},
-  el('header', {},
-    el('h4', { textContent: c.name }),
-    c.draft.keys ? keycaps(c.draft.keys, 'the key this sends into the game') : '',
-    c.hotkey ? keycaps(c.hotkey, 'global hotkey, works without listening', 'hot') : ''),
-  el('div', { className: 'phrases' }, ...c.phrases.map((p) => el('span', { textContent: `“${p}”` })), c.more ? el('span', { textContent: `+${c.more} more` }) : ''),
-  el('div', { className: 'meta', textContent: `${c.actions} action${c.actions === 1 ? '' : 's'}${c.always_active ? ' · always active' : ''}${c.draft.window || c.draft.process ? ` · ${[c.draft.window, c.draft.process].filter(Boolean).join(' / ')}` : ''}` }),
-  el('div', { className: 'editor-row' },
-    c.editable
-      ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
-      : el('span', { className: 'meta', textContent: 'too detailed to edit here, use Edit profile' }),
+const haystack = (c) => [c.name, c.draft.keys, c.hotkey, ...c.phrases]
+  .filter(Boolean)
+  .join(' ')
+  .toLowerCase()
+
+const phraseCell = (c) => el('td', { className: 'say' },
+  ...c.phrases.slice(0, 2).map((phrase) => el('span', { textContent: `\u201c${phrase}\u201d` })),
+  c.more || c.phrases.length > 2
+    ? el('span', { className: 'dim', textContent: `+${c.more + Math.max(0, c.phrases.length - 2)} more` })
+    : '')
+
+const whereCell = (c) => el('td', { className: 'dim' }, el('span', {
+  textContent: [c.draft.window, c.draft.process].filter(Boolean).join(' / ')
+    || (c.always_active ? 'anywhere, always active' : 'profile default'),
+}))
+
+const commandRow = (c) => el('tr', { hay: haystack(c) },
+  el('td', {}, el('strong', { textContent: c.name }),
+    c.actions > 1 ? el('span', { className: 'dim', textContent: ` ${c.actions} actions` }) : ''),
+  phraseCell(c),
+  el('td', {}, c.draft.keys ? keycaps(c.draft.keys, 'the key this sends into the game') : el('span', { className: 'dim', textContent: '\u2014' })),
+  el('td', {}, c.hotkey ? keycaps(c.hotkey, 'global hotkey', 'hot') : el('span', { className: 'dim', textContent: '\u2014' })),
+  whereCell(c),
+  el('td', { className: 'row-actions' },
     el('button', {
       className: c.pad ? 'on' : '',
-      textContent: c.pad ? 'On my phone' : 'Add to phone',
+      title: c.pad ? 'on your phone' : 'add to your phone',
+      textContent: c.pad ? 'Phone' : 'Phone',
       onclick: () => call('set_pad', { index: c.index, on: !c.pad }).then(refresh),
     }),
+    c.editable
+      ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
+      : el('button', { disabled: true, title: 'too detailed to edit here, use Edit profile', textContent: 'Edit' }),
     el('button', {
       textContent: 'Delete',
       onclick: (event) => removeCommand(event.currentTarget, c),
@@ -238,9 +255,23 @@ const commandRow = (c) => el('li', {},
   ),
 )
 
+const applySearch = () => {
+  const needle = ($('command-search').value || '').trim().toLowerCase()
+  const rows = [...$('commands').children]
+  const shown = rows.filter((row) => {
+    const hit = !needle || (row.hay || '').includes(needle)
+    row.hidden = !hit
+    return hit
+  })
+  $('commands-empty').hidden = shown.length > 0 || rows.length === 0
+  $('command-count').textContent = needle
+    ? `${shown.length} of ${rows.length}`
+    : `${rows.length} command${rows.length === 1 ? '' : 's'}`
+}
+
 const renderCommands = (commands) => {
-  $('command-count').textContent = commands.length || ''
   $('commands').replaceChildren(...commands.map(commandRow))
+  applySearch()
 }
 
 const flavorName = (label) => {
@@ -445,6 +476,7 @@ $('model').addEventListener('change', (e) => saveConfig({ model: e.target.value 
 $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.target.checked }))
 $('download').addEventListener('click', () => call('download_model', { name: state.model }).finally(refresh))
 $('edit').addEventListener('click', () => call('open_profile'))
+$('command-search').addEventListener('input', applySearch)
 armCapture('d-keys')
 armCapture('d-hotkey')
 $('add-command').addEventListener('click', () => showEditor(null, { mode: 'background' }))

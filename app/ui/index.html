@@ -129,8 +129,25 @@
             <span id="d-error" class="missing"></span>
           </div>
         </div>
-        <button id="add-command" class="primary">Add a command</button>
-        <ul id="commands" class="commands"></ul>
+        <div class="toolbar">
+          <button id="add-command" class="primary">Add a command</button>
+          <input id="command-search" type="search" placeholder="Search names, phrases or keys" autocomplete="off">
+          <span id="command-count" class="meta"></span>
+        </div>
+        <table class="commands">
+          <thead>
+            <tr>
+              <th>Command</th>
+              <th>Say</th>
+              <th>Sends</th>
+              <th>Hotkey</th>
+              <th>Window</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="commands"></tbody>
+        </table>
+        <p id="commands-empty" class="hint" hidden>Nothing matches that search.</p>
       </div>
 
       <div class="tab" id="tab-phone" hidden>
