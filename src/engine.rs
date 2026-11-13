@@ -331,12 +331,14 @@ fn start_voice(
 
 fn gate(shared: &Shared) -> Gate {
     match (
+        shared.listening.load(SeqCst),
         shared.profile().settings.push_to_talk.is_some(),
         shared.ptt_active.load(SeqCst),
     ) {
-        (false, _) => Gate::Auto,
-        (true, true) => Gate::Open,
-        (true, false) => Gate::Closed,
+        (false, _, _) => Gate::Closed,
+        (true, false, _) => Gate::Auto,
+        (true, true, true) => Gate::Open,
+        (true, true, false) => Gate::Closed,
     }
 }
 
@@ -384,4 +386,47 @@ fn recognize(
         .filter(|h| !crate::matcher::normalize(&h.text).is_empty())
         .try_for_each(|h| tx.send(h))
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::profile::Profile;
+
+    fn shared(push_to_talk: Option<&str>) -> Arc<Shared> {
+        let mut profile = Profile::parse(crate::EXAMPLE_STARTER).unwrap();
+        profile.settings.push_to_talk = push_to_talk.map(Into::into);
+        Shared::new(profile)
+    }
+
+    #[test]
+    fn turning_listening_off_stops_the_microphone_reaching_the_recognizer() {
+        let shared = shared(None);
+        shared.listening.store(true, SeqCst);
+        assert_eq!(gate(&shared), Gate::Auto);
+        shared.listening.store(false, SeqCst);
+        assert_eq!(
+            gate(&shared),
+            Gate::Closed,
+            "speech was still being captured while Warcry was not listening"
+        );
+    }
+
+    #[test]
+    fn push_to_talk_still_decides_the_gate_while_listening() {
+        let shared = shared(Some("ctrl+space"));
+        shared.listening.store(true, SeqCst);
+        assert_eq!(gate(&shared), Gate::Closed);
+        shared.ptt_active.store(true, SeqCst);
+        assert_eq!(gate(&shared), Gate::Open);
+        shared.listening.store(false, SeqCst);
+        assert_eq!(gate(&shared), Gate::Closed, "held talk key beat the switch");
+    }
+
+    #[test]
+    fn a_closed_gate_hands_the_recognizer_nothing() {
+        let mut vad = Vad::new(&Profile::default().settings);
+        let loud: Vec<f32> = (0..16000).map(|i| ((i as f32) * 0.2).sin() * 0.5).collect();
+        assert!(vad.push(&loud, Gate::Closed).is_empty());
+    }
 }
