@@ -172,19 +172,19 @@ actions = [{ do = "combo", keys = "ctrl+3" }]
 name = "soothe"
 phrase = "[soothe;sooth] [animal;target;it;]"
 pad = true
-actions = [{ do = "press", key = "c" }]
+actions = [{ do = "press", key = "f1" }]
 
 [[command]]
 name = "hibernate"
 phrase = "hibernate [target;it;them;]"
 pad = true
-actions = [{ do = "combo", keys = "shift+c" }]
+actions = [{ do = "press", key = "f2" }]
 
 [[command]]
 name = "natures grasp"
 phrase = "natures grasp;grasp"
 pad = true
-actions = [{ do = "combo", keys = "alt+c" }]
+actions = [{ do = "press", key = "f3" }]
 
 [[command]]
 name = "skysight"
@@ -197,3 +197,21 @@ name = "follow"
 phrase = "follow [me;]"
 pad = true
 actions = [{ do = "press", key = "f" }]
+
+[[command]]
+name = "moonfire"
+phrase = "[moonfire;moon fire]"
+pad = true
+actions = [{ do = "press", key = "f4" }]
+
+[[command]]
+name = "mark druid"
+phrase = "mark [of the wild;] [me;druid;myself;]"
+pad = true
+actions = [{ do = "press", key = "f5" }]
+
+[[command]]
+name = "mark hunter"
+phrase = "mark [of the wild;] [hunter;hawk]"
+pad = true
+actions = [{ do = "press", key = "f6" }]
