@@ -227,6 +227,43 @@ const removeCommand = (c) => ask(
   `"${c.name}" will go from this profile, along with everything you can say to run it.`,
 ).then((yes) => yes && call('remove_command', { index: c.index }).then(refresh))
 
+const grid = (spec) => {
+  const body = el('tbody')
+  const count = el('span', { className: 'meta tally' })
+  const empty = el('p', { className: 'note empty-row', hidden: true })
+  const find = el('input', {
+    type: 'search', placeholder: spec.search, autocomplete: 'off',
+  })
+  const sift = () => {
+    const needle = find.value.trim().toLowerCase()
+    const rows = [...body.children]
+    const shown = rows.filter((row) => {
+      const hit = !needle || (row.hay || '').includes(needle)
+      row.hidden = !hit
+      return hit
+    })
+    empty.hidden = shown.length > 0
+    empty.textContent = needle ? 'Nothing matches that search.' : spec.empty
+    count.textContent = needle ? `${shown.length} of ${rows.length}` : spec.tally(rows.length)
+  }
+  find.addEventListener('input', sift)
+  const head = spec.columns.length
+    ? el('thead', {}, el('tr', {}, ...spec.columns.map((name) => el('th', { textContent: name }))))
+    : ''
+  const table = el('table', { className: 'commands' }, ...[head, body].filter(Boolean))
+  const node = el('div', { id: spec.into, className: `grid${spec.fill ? ' fill' : ''}` },
+    el('div', { className: 'table-bar' }, ...(spec.actions || []), find, count),
+    el('div', { className: 'scroller' }, table),
+    empty)
+  $(spec.into).replaceWith(node)
+  return {
+    fill: (rows) => {
+      body.replaceChildren(...rows)
+      sift()
+    },
+  }
+}
+
 const haystack = (c) => [c.name, c.draft.keys, c.hotkey, ...c.phrases]
   .filter(Boolean)
   .join(' ')
@@ -269,24 +306,19 @@ const commandRow = (c) => el('tr', { hay: haystack(c) },
   ),
 )
 
-const applySearch = () => {
-  const needle = ($('command-search').value || '').trim().toLowerCase()
-  const rows = [...$('commands').children]
-  const shown = rows.filter((row) => {
-    const hit = !needle || (row.hay || '').includes(needle)
-    row.hidden = !hit
-    return hit
-  })
-  $('commands-empty').hidden = shown.length > 0 || rows.length === 0
-  $('command-count').textContent = needle
-    ? `${shown.length} of ${rows.length}`
-    : `${rows.length} command${rows.length === 1 ? '' : 's'}`
-  $('command-tally').textContent = rows.length || ''
-}
+const commandGrid = grid({
+  into: 'commands-mount',
+  columns: ['Command', 'Say', 'Sends', 'Hotkey', ''],
+  search: 'Search names, phrases or keys',
+  empty: 'No commands yet. Add one, or open the profile file.',
+  tally: (n) => `${n} command${n === 1 ? '' : 's'}`,
+  actions: [$('add-command')],
+  fill: true,
+})
 
 const renderCommands = (commands) => {
-  $('commands').replaceChildren(...commands.map(commandRow))
-  applySearch()
+  commandGrid.fill(commands.map(commandRow))
+  $('command-tally').textContent = commands.length || ''
 }
 
 const flavorName = (label) => {
@@ -505,7 +537,6 @@ $('model').addEventListener('change', (e) => saveConfig({ model: e.target.value 
 $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.target.checked }))
 $('download').addEventListener('click', () => call('download_model', { name: state.model }).finally(refresh))
 $('edit').addEventListener('click', () => call('open_profile'))
-$('command-search').addEventListener('input', applySearch)
 armCapture('d-keys', 'click, then press the key')
 armCapture('d-hotkey', 'none')
 $('add-command').addEventListener('click', () => showEditor(null, {}))
@@ -768,12 +799,19 @@ const overLong = (draft) => [
   draft.body.length > 255 && `the game allows 255 characters in a macro, this is ${draft.body.length}`,
 ].find(Boolean)
 
+const macroGrid = grid({
+  into: 'macro-mount',
+  columns: [],
+  search: 'Search this character\'s macros',
+  empty: 'No macros saved for this character.',
+  tally: () => '',
+})
+
 const renderGameMacros = (list) => {
   const who = $('macro-who').selectedOptions[0]
   const name = who ? who.textContent.split(' · ')[0] : 'this character'
   $('macro-head').textContent = `${name}'s macros${list.length ? ` · ${list.length}` : ''}`
-  $('macro-empty').hidden = list.length > 0
-  $('macro-rows').replaceChildren(...list.map((m) => el('tr', {},
+  macroGrid.fill(list.map((m) => el('tr', { hay: `${m.name} ${m.body}`.toLowerCase() },
     el('td', {}, el('strong', { textContent: m.name })),
     el('td', {}, el('pre', { className: 'macro-body', textContent: m.body })),
     el('td', { className: 'row-actions' },
@@ -827,7 +865,7 @@ const draftRow = (m, index) => {
   })
   body.addEventListener('blur', hideHints)
   queueMicrotask(() => grow(body))
-  return el('tr', {},
+  return el('tr', { hay: `${m.name} ${m.body}`.toLowerCase() },
     el('td', {}, name),
     el('td', {}, body, note),
     el('td', { className: 'row-actions' },
@@ -843,14 +881,21 @@ const draftRow = (m, index) => {
   )
 }
 
+const draftGrid = grid({
+  into: 'drafts-mount',
+  columns: [],
+  search: 'Search your macros',
+  empty: 'Nothing written yet.',
+  tally: () => '',
+  actions: [$('m-new')],
+})
+
 const renderDrafts = (list) => {
-  const rows = list.map(draftRow)
   const pending = fresh ? [draftRow(fresh, null)] : []
   $('draft-head').textContent = `My macros${list.length ? ` · ${list.length}` : ''}`
-  $('drafts-empty').hidden = list.length + pending.length > 0
-  $('drafts').replaceChildren(...rows, ...pending)
-  const last = pending.length && $('drafts').lastElementChild
-  if (last) last.querySelector('.cell-name').focus()
+  draftGrid.fill([...list.map(draftRow), ...pending])
+  const last = pending.length && [...document.querySelectorAll('#drafts-mount .cell-name')].pop()
+  if (last) last.focus()
 }
 
 const loadDrafts = () => call('macro_drafts').then(renderDrafts)

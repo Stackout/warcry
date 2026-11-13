@@ -81,25 +81,9 @@
         </div>
       </div>
 
-      <div class="tab" id="tab-commands" hidden>
-        <div class="bar-row">
-          <button id="add-command" class="primary">Add a command</button>
-          <input id="command-search" type="search" placeholder="Search names, phrases or keys" autocomplete="off">
-          <span id="command-count" class="meta"></span>
-        </div>
-        <table class="commands">
-          <thead>
-            <tr>
-              <th>Command</th>
-              <th>Say</th>
-              <th>Sends</th>
-              <th>Hotkey</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="commands"></tbody>
-        </table>
-        <p id="commands-empty" class="hint" hidden>Nothing matches that search.</p>
+      <div class="tab fill" id="tab-commands" hidden>
+        <button id="add-command" class="primary">Add a command</button>
+        <div id="commands-mount"></div>
       </div>
 
       <div class="tab" id="tab-phone" hidden>
@@ -170,24 +154,16 @@
 
       <section class="group">
         <h2><span id="macro-head">Saved on this character</span></h2>
-        <table class="commands plain">
-          <tbody id="macro-rows"></tbody>
-        </table>
-        <p id="macro-empty" class="note" hidden>No macros saved for this character.</p>
+        <div id="macro-mount"></div>
       </section>
 
       <section class="group">
         <h2><span id="draft-head">My macros</span></h2>
-        <div class="bar-row inset">
-          <button id="m-new" class="primary">New macro</button>
-          <span class="hint">Click a name or a body to edit it. Type <code>/</code> for commands or
-            <code>[</code> for conditions and Warcry suggests the rest; Enter or Tab accepts, Esc
-            dismisses. Changes save when you click away.</span>
-        </div>
-        <table class="commands macros plain">
-          <tbody id="drafts"></tbody>
-        </table>
-        <p id="drafts-empty" class="note" hidden>Nothing written yet.</p>
+        <button id="m-new" class="primary">New macro</button>
+        <div id="drafts-mount"></div>
+        <p class="note inset">Click a name or a body to edit it. Type <code>/</code> for commands or
+          <code>[</code> for conditions and Warcry suggests the rest; Enter or Tab accepts, Esc
+          dismisses. Changes save when you click away.</p>
       </section>
     </div>
 
