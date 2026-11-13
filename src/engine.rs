@@ -272,7 +272,7 @@ impl Session {
                 m.command,
                 format!("heard {:?}, {:.0}%", heard.text, m.score * 100.0),
             ),
-            Some(m) => tracing::info!(
+            Some(m) if worth_saying(m.score, threshold) => tracing::info!(
                 "heard {:?} ({}ms), closest {:?} at {:.0}% (< {:.0}%)",
                 heard.text,
                 heard.millis,
@@ -280,9 +280,22 @@ impl Session {
                 m.score * 100.0,
                 threshold * 100.0
             ),
-            None => tracing::info!("heard {:?} ({}ms)", heard.text, heard.millis),
+            Some(m) => tracing::debug!(
+                "heard {:?} ({}ms), closest {:?} at {:.0}%",
+                heard.text,
+                heard.millis,
+                m.phrase,
+                m.score * 100.0
+            ),
+            None => tracing::debug!("heard {:?} ({}ms)", heard.text, heard.millis),
         }
     }
+}
+
+const NEAR: f64 = 0.10;
+
+fn worth_saying(score: f64, threshold: f64) -> bool {
+    score + NEAR >= threshold
 }
 
 fn modified(path: &Path) -> Option<SystemTime> {
@@ -421,6 +434,18 @@ mod tests {
         assert_eq!(gate(&shared), Gate::Open);
         shared.listening.store(false, SeqCst);
         assert_eq!(gate(&shared), Gate::Closed, "held talk key beat the switch");
+    }
+
+    #[test]
+    fn only_a_near_miss_is_worth_saying_out_loud() {
+        let threshold = 0.75;
+        assert!(worth_saying(0.73, threshold), "a near miss was hidden");
+        assert!(worth_saying(0.65, threshold));
+        assert!(!worth_saying(0.64, threshold));
+        assert!(
+            !worth_saying(0.48, threshold),
+            "ordinary conversation was written to the log"
+        );
     }
 
     #[test]
