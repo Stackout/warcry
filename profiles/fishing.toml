@@ -152,19 +152,19 @@ actions = [{ do = "combo", keys = "ctrl+alt+9" }]
 
 [[command]]
 name = "thorns hunter"
-phrase = "thorns [on;] [my;the;] hunter"
+phrase = "[thorns;forms;horns;thorn] [on;] [my;the;] hunter"
 pad = true
 actions = [{ do = "combo", keys = "ctrl+1" }]
 
 [[command]]
 name = "thorns druid"
-phrase = "thorns [on;] [me;druid]"
+phrase = "[thorns;forms;horns;thorn] [on;] [me;druid]"
 pad = true
 actions = [{ do = "combo", keys = "ctrl+2" }]
 
 [[command]]
 name = "thorns pet"
-phrase = "thorns [on;] [my;the;] pet"
+phrase = "[thorns;forms;horns;thorn] [on;] [my;the;] pet"
 pad = true
 actions = [{ do = "combo", keys = "ctrl+3" }]
 
