@@ -223,3 +223,9 @@ no_target = true
 always_active = true
 pad = true
 actions = [{ do = "listening", state = "toggle" }]
+
+[[command]]
+name = "wrath"
+phrase = "[cast;] [wrath;rath;roth]"
+pad = true
+actions = [{ do = "press", key = "1" }]
