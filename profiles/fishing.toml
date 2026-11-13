@@ -66,7 +66,8 @@ actions = [{ do = "press", key = "e" }]
 [[command]]
 name = "eat"
 phrase = "eat;eat [food;something]"
-actions = [{ do = "click", button = "right", hold_ms = 1800 }]
+pad = true
+actions = [{ do = "press", key = "f7" }]
 
 [[command]]
 name = "slot one"
@@ -229,3 +230,21 @@ name = "wrath"
 phrase = "[cast;] [wrath;rath;roth]"
 pad = true
 actions = [{ do = "press", key = "1" }]
+
+[[command]]
+name = "mana pot"
+phrase = "[mana;blue] pot[ion;]"
+pad = true
+actions = [{ do = "press", key = "f8" }]
+
+[[command]]
+name = "health pot"
+phrase = "[health;healing;red] potion"
+pad = true
+actions = [{ do = "press", key = "f9" }]
+
+[[command]]
+name = "drink"
+phrase = "drink;drink [water;something];[have a;] drink"
+pad = true
+actions = [{ do = "press", key = "f10" }]
