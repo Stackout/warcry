@@ -56,6 +56,87 @@ const draftFields = {
   mode: 'd-mode',
 }
 
+const MAC = (navigator.platform || '').toLowerCase().includes('mac')
+
+const CAP_LABELS = MAC
+  ? { ctrl: '\u2303', alt: '\u2325', shift: '\u21e7', cmd: '\u2318' }
+  : { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Win' }
+
+const CAP_GLYPHS = {
+  space: 'Space', enter: '\u21a9', tab: '\u21e5', escape: 'Esc',
+  backspace: '\u232b', delete: 'Del', up: '\u2191', down: '\u2193',
+  left: '\u2190', right: '\u2192', pageup: 'PgUp', pagedown: 'PgDn',
+}
+
+const capLabel = (part) => CAP_LABELS[part] || CAP_GLYPHS[part]
+  || (part.length === 1 ? part.toUpperCase() : part)
+
+const keycaps = (text, title, extra) => el('span', {
+  className: `caps${extra ? ` ${extra}` : ''}`,
+  title: title || '',
+}, ...String(text).split('+').filter(Boolean).map((part) => el('kbd', { textContent: capLabel(part) })))
+
+const CODE_NAMES = {
+  Space: 'space', Enter: 'enter', Tab: 'tab', Escape: 'escape',
+  Backspace: 'backspace', Delete: 'delete', ArrowUp: 'up', ArrowDown: 'down',
+  ArrowLeft: 'left', ArrowRight: 'right', Home: 'home', End: 'end',
+  PageUp: 'pageup', PageDown: 'pagedown', Minus: '-', Equal: '=',
+  BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';',
+  Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`',
+}
+
+const baseKey = (event) => {
+  const letter = /^Key([A-Z])$/.exec(event.code)
+  if (letter) return letter[1].toLowerCase()
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(event.code)
+  if (digit) return digit[1]
+  const fkey = /^F(\d{1,2})$/.exec(event.code)
+  if (fkey) return `f${fkey[1]}`
+  return CODE_NAMES[event.code] || null
+}
+
+const comboOf = (event) => {
+  const base = baseKey(event)
+  if (!base) return null
+  const parts = []
+  if (event.ctrlKey) parts.push('ctrl')
+  if (event.altKey) parts.push('alt')
+  if (event.shiftKey) parts.push('shift')
+  if (event.metaKey) parts.push('cmd')
+  parts.push(base)
+  return parts.join('+')
+}
+
+const capture = (input) => {
+  const stop = () => {
+    input.classList.remove('listening')
+    input.placeholder = input.dataset.hint || ''
+    document.removeEventListener('keydown', onKey, true)
+  }
+  const onKey = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.code === 'Escape') return stop()
+    const combo = comboOf(event)
+    if (!combo) return
+    input.value = combo
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    stop()
+  }
+  input.dataset.hint = input.dataset.hint || input.placeholder
+  input.placeholder = 'press any key…'
+  input.classList.add('listening')
+  document.addEventListener('keydown', onKey, true)
+}
+
+const armCapture = (id) => {
+  const input = $(id)
+  if (!input) return
+  input.readOnly = true
+  input.addEventListener('focus', () => capture(input))
+  input.addEventListener('click', () => capture(input))
+}
+
 const windowOption = (choice) => el('option', {
   value: String(choice.pid),
   textContent: `${choice.title || choice.process} — ${choice.process}, pid ${choice.pid}`,
@@ -135,7 +216,10 @@ const removeCommand = (button, c) => {
 }
 
 const commandRow = (c) => el('li', {},
-  el('header', {}, el('h4', { textContent: c.name }), c.hotkey ? el('kbd', { textContent: c.hotkey }) : ''),
+  el('header', {},
+    el('h4', { textContent: c.name }),
+    c.draft.keys ? keycaps(c.draft.keys, 'the key this sends into the game') : '',
+    c.hotkey ? keycaps(c.hotkey, 'global hotkey, works without listening', 'hot') : ''),
   el('div', { className: 'phrases' }, ...c.phrases.map((p) => el('span', { textContent: `“${p}”` })), c.more ? el('span', { textContent: `+${c.more} more` }) : ''),
   el('div', { className: 'meta', textContent: `${c.actions} action${c.actions === 1 ? '' : 's'}${c.always_active ? ' · always active' : ''}${c.draft.window || c.draft.process ? ` · ${[c.draft.window, c.draft.process].filter(Boolean).join(' / ')}` : ''}` }),
   el('div', { className: 'editor-row' },
@@ -361,6 +445,8 @@ $('model').addEventListener('change', (e) => saveConfig({ model: e.target.value 
 $('auto-start').addEventListener('change', (e) => saveConfig({ auto_start: e.target.checked }))
 $('download').addEventListener('click', () => call('download_model', { name: state.model }).finally(refresh))
 $('edit').addEventListener('click', () => call('open_profile'))
+armCapture('d-keys')
+armCapture('d-hotkey')
 $('add-command').addEventListener('click', () => showEditor(null, { mode: 'background' }))
 renderAddon()
 $('d-save').addEventListener('click', saveDraft)
