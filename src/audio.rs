@@ -181,7 +181,7 @@ impl Vad {
             silence_frames: silence_frames as u32,
             max_samples: (s.max_utterance_ms * RATE / 1000) as usize,
             min_samples: (silence_frames + 10) * FRAME,
-            noise: 0.0,
+            noise: f32::MAX,
             pending: Vec::new(),
             preroll: VecDeque::new(),
             speech: Vec::new(),
@@ -232,18 +232,24 @@ impl Vad {
         full
     }
 
+    fn track(&mut self, rms: f32) {
+        self.noise = match rms < self.noise {
+            true => rms,
+            false => self.noise * 0.99 + rms * 0.01,
+        };
+    }
+
     fn detect(&mut self, f: &[f32]) -> Option<Vec<f32>> {
         let rms = (f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt();
+        self.track(rms);
         let loud = rms > self.threshold();
         match (self.active, loud) {
             (false, false) => {
-                self.noise = self.noise * 0.95 + rms * 0.05;
                 self.loud = 0;
                 self.remember(f);
                 None
             }
             (false, true) => {
-                self.noise = self.noise * 0.995 + rms * 0.005;
                 self.loud += 1;
                 self.remember(f);
                 (self.loud >= ONSET_FRAMES).then(|| {
@@ -305,6 +311,23 @@ mod tests {
             .collect();
         assert_eq!(out.len(), 1);
         assert!(out[0].len() >= RATE as usize);
+    }
+
+    #[test]
+    fn steady_background_noise_does_not_latch_the_detector_open() {
+        let mut vad = Vad::new(&Settings::default());
+        let hum = tone(RATE as usize, 0.05);
+        let speech = tone(RATE as usize, 0.5);
+        let out: Vec<Vec<f32>> = [&hum, &hum, &hum, &speech, &hum, &hum]
+            .iter()
+            .flat_map(|chunk| vad.push(chunk, Gate::Auto))
+            .collect();
+        assert_eq!(
+            out.len(),
+            1,
+            "noise above vad_threshold must not pin the detector open"
+        );
+        assert!(vad.noise > Settings::default().vad_threshold);
     }
 
     #[test]
