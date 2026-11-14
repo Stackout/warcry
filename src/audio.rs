@@ -216,9 +216,25 @@ impl Vad {
         }
     }
 
+    fn threshold(&self) -> f32 {
+        self.min_threshold.max(self.noise * self.noise_multiplier)
+    }
+
+    fn capped(&self, rms: f32) -> bool {
+        let full = self.speech.len() >= self.max_samples;
+        full.then(|| {
+            tracing::warn!(
+                "the microphone never went quiet, so {}ms of audio was cut mid-sentence (level {rms:.4}, speech starts above {:.4})",
+                self.max_samples * 1000 / RATE as usize,
+                self.threshold()
+            )
+        });
+        full
+    }
+
     fn detect(&mut self, f: &[f32]) -> Option<Vec<f32>> {
         let rms = (f.iter().map(|x| x * x).sum::<f32>() / f.len() as f32).sqrt();
-        let loud = rms > self.min_threshold.max(self.noise * self.noise_multiplier);
+        let loud = rms > self.threshold();
         match (self.active, loud) {
             (false, false) => {
                 self.noise = self.noise * 0.95 + rms * 0.05;
@@ -239,7 +255,7 @@ impl Vad {
             (true, _) => {
                 self.speech.extend_from_slice(f);
                 self.quiet = (self.quiet + 1) * !loud as u32;
-                (self.quiet >= self.silence_frames || self.speech.len() >= self.max_samples)
+                (self.quiet >= self.silence_frames || self.capped(rms))
                     .then(|| self.take())
                     .filter(|u| u.len() >= self.min_samples)
             }

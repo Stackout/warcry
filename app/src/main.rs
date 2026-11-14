@@ -957,30 +957,38 @@ fn target_windows(state: State<App>) -> Vec<WindowChoice> {
         .collect()
 }
 
-fn refresh(app: &AppHandle) {
-    let windows = window::list();
-    let devices = audio::devices();
-    if let Err(e) = &windows {
-        tracing::warn!("cannot list windows: {e}");
-    }
+fn watching(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false)
+}
+
+fn refresh(app: &AppHandle, scan: bool) {
+    let devices = audio::devices().ok();
+    let windows = scan
+        .then(window::list)
+        .map(|found| found.inspect_err(|e| tracing::warn!("cannot list windows: {e}")))
+        .and_then(Result::ok);
     let state = app.state::<App>();
     let mut probe = state.probe.lock();
-    if let Ok(windows) = windows {
-        probe.windows = windows;
-    }
-    if let Ok(devices) = devices {
-        probe.devices = devices;
-    }
+    probe.windows = windows.unwrap_or(std::mem::take(&mut probe.windows));
+    probe.devices = devices.unwrap_or(std::mem::take(&mut probe.devices));
 }
+
+const PROBE: std::time::Duration = std::time::Duration::from_secs(2);
+const WINDOW_SCAN: std::time::Duration = std::time::Duration::from_secs(5);
 
 fn spawn_probe(app: AppHandle) {
     let spawned = std::thread::Builder::new()
         .name("probe".into())
         .spawn(move || {
+            let mut scanned = std::time::Instant::now() - WINDOW_SCAN;
             loop {
-                refresh(&app);
+                let scan = watching(&app) && scanned.elapsed() >= WINDOW_SCAN;
+                scan.then(|| scanned = std::time::Instant::now());
+                refresh(&app, scan);
                 companion::rescan(&app);
-                std::thread::sleep(std::time::Duration::from_secs(2));
+                std::thread::sleep(PROBE);
             }
         });
     drop(spawned.inspect_err(|e| tracing::warn!("cannot probe windows and microphones: {e}")));

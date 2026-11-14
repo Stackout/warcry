@@ -172,22 +172,37 @@ fn fronted(target: &Target) -> bool {
     })
 }
 
+fn timed<T>(label: &str, work: impl FnOnce() -> T) -> T {
+    let began = Instant::now();
+    let out = work();
+    tracing::debug!("  {label} {}ms", began.elapsed().as_millis());
+    out
+}
+
 fn targeted(ctx: Ctx, target: &Target, actions: &[Action]) -> Result<()> {
     #[cfg(windows)]
     if target.mode == TargetMode::Background {
         let win = window::find(target)?;
         return drive(window::BackgroundSink::new(&win), ctx, actions);
     }
-    if fronted(target) {
-        return drive(EnigoSink::new()?, ctx, actions);
+    if timed("already in front?", || fronted(target)) {
+        let sink = timed("open input", EnigoSink::new)?;
+        return timed("send keys", || drive(sink, ctx, actions));
     }
-    let win = window::find(target)?;
-    let previous = window::front().ok().flatten().filter(|p| p.pid != win.pid);
-    window::focus(&win)?;
-    let result = drive(EnigoSink::new()?, ctx, actions);
+    let win = timed("find window", || window::find(target))?;
+    let previous = timed("what was in front", || {
+        window::front().ok().flatten().filter(|p| p.pid != win.pid)
+    });
+    timed("raise window", || window::focus(&win))?;
+    let sink = timed("open input", EnigoSink::new)?;
+    let result = timed("send keys", || drive(sink, ctx, actions));
     previous
         .filter(|_| target.mode != TargetMode::Focus)
-        .map(|p| window::focus(&p).report("restoring focus"));
+        .map(|p| {
+            timed("give focus back", || {
+                window::focus(&p).report("restoring focus")
+            })
+        });
     result
 }
 
