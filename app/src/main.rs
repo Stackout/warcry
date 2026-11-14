@@ -1042,13 +1042,29 @@ impl<S: tracing::Subscriber> Layer<S> for Forward {
     }
 }
 
+const EVERYTHING: &str = "warcry=info,warcry_app=info,warcry_rig=info,warcry_ears=info,\
+    warcry_relay=info,warcry_link=info";
+
+pub fn log_path() -> PathBuf {
+    home().join("warcry.log")
+}
+
+fn open_log() -> Option<Arc<std::fs::File>> {
+    let path = log_path();
+    std::fs::create_dir_all(home()).ok()?;
+    std::fs::rename(&path, path.with_extension("log.1")).ok();
+    std::fs::File::create(&path).ok().map(Arc::new)
+}
+
 fn init_logging(app: AppHandle) {
     tracing_subscriber::registry()
-        .with(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("warcry=info,warcry_app=info")),
-        )
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(EVERYTHING)))
         .with(tracing_subscriber::fmt::layer().with_target(false))
+        .with(open_log().map(|file| {
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(file)
+        }))
         .with(Forward(app))
         .try_init()
         .unwrap_or_default();

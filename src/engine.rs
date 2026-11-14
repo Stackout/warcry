@@ -50,6 +50,11 @@ pub enum Note {
         command: String,
         source: String,
     },
+    Done {
+        command: String,
+        millis: u64,
+        error: Option<String>,
+    },
     Listening {
         on: bool,
     },
@@ -234,7 +239,19 @@ impl Session {
             command,
             source: source.clone(),
         });
-        drop(actions::trigger(&self.shared, index, &source));
+        let notify = self.notify.clone();
+        drop(actions::trigger(
+            &self.shared,
+            index,
+            &source,
+            move |done| {
+                notify(Note::Done {
+                    command: done.command,
+                    millis: done.millis,
+                    error: done.error,
+                })
+            },
+        ));
     }
 
     fn on_hotkey(&self, event: Event) {

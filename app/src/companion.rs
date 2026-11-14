@@ -263,7 +263,7 @@ fn named(profile: &Profile, name: &str) -> Option<usize> {
 
 fn run(app: &AppHandle, profile: &Arc<Profile>, index: usize) -> String {
     let name = profile.commands[index].display_name();
-    actions::trigger(&sharing(app, profile), index, "phone");
+    actions::trigger(&sharing(app, profile), index, "phone", drop);
     name
 }
 

@@ -248,6 +248,10 @@ label.rw { cursor: pointer; }
   padding: 8px 12px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius);
 }
 .feed li.fired { border-left: 2px solid var(--ember); }
+.feed li.failed { border-left: 2px solid var(--bad); }
+.feed li.slow { border-left: 2px solid var(--amber); }
+.feed .failed .chip { background: #4a1f1f; color: var(--bad); }
+.feed .slow .chip { background: #4a3a1a; color: var(--amber); }
 .feed time { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 .feed .said { font-size: 13px; user-select: text; }
 .feed .said small { display: block; color: var(--dim); font-size: 11px; margin-top: 1px; }

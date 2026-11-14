@@ -35,5 +35,11 @@ impl Display for Cancelled {
 impl std::error::Error for Cancelled {}
 
 pub fn ignore_cancel(result: anyhow::Result<()>) -> anyhow::Result<()> {
-    result.or_else(|e| e.downcast_ref::<Cancelled>().map(|_| ()).ok_or(e))
+    result.or_else(|e| match e.downcast_ref::<Cancelled>() {
+        Some(_) => {
+            tracing::info!("stopped partway by another command");
+            Ok(())
+        }
+        None => Err(e),
+    })
 }

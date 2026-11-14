@@ -484,6 +484,22 @@ const addFeed = (note) => {
   $('feed-empty').hidden = true
 }
 
+const SLOW = 400
+
+const addOutcome = (note) => {
+  if (!note.error && note.millis < SLOW) return
+  const said = note.error || `${note.command} took its time reaching the game`
+  const feed = $('feed')
+  feed.prepend(el('li', { className: note.error ? 'failed' : 'slow' },
+    el('time', { textContent: clock() }),
+    el('div', { className: 'said' }, said, el('small', { textContent: `${note.millis} ms` })),
+    el('span', { className: 'chip', textContent: `${note.error ? '\u2715' : '\u25b6'} ${note.command}` }),
+  ))
+  Array.from(feed.children).slice(100).forEach((child) => child.remove())
+  $('feed-empty').hidden = true
+  if (note.error) toast(`${note.command}: ${note.error}`)
+}
+
 const showProgress = (note) => {
   const box = $('progress')
   const done = note.total > 0 && note.read >= note.total
@@ -504,6 +520,7 @@ const appendLog = (line) => {
 const NOTES = {
   heard: addFeed,
   fired: (note) => note.source === 'hotkey' && addFeed({ text: 'hotkey', command: note.command, fired: true, score: 1 }),
+  done: addOutcome,
   downloading: showProgress,
   ready: refresh,
   stopped: refresh,

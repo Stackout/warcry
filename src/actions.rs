@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MIN_HOLD_MS: u64 = 30;
 const MAX_DEPTH: u8 = 16;
+const SLOW_MS: u64 = 400;
 
 pub struct Shared {
     profile: RwLock<Arc<Profile>>,
@@ -57,14 +58,53 @@ impl Shared {
     }
 }
 
-pub fn trigger(shared: &Arc<Shared>, index: usize, reason: &str) -> JoinHandle<()> {
+pub struct Done {
+    pub command: String,
+    pub millis: u64,
+    pub error: Option<String>,
+}
+
+fn finished(done: &Done) {
+    let Done {
+        command,
+        millis,
+        error,
+    } = done;
+    match error {
+        Some(e) => tracing::error!("{command:?} failed after {millis}ms: {e}"),
+        None if *millis >= SLOW_MS => {
+            tracing::warn!("{command:?} took {millis}ms to reach the game")
+        }
+        None => tracing::debug!("{command:?} done in {millis}ms"),
+    }
+}
+
+pub fn trigger(
+    shared: &Arc<Shared>,
+    index: usize,
+    reason: &str,
+    done: impl FnOnce(Done) + Send + 'static,
+) -> JoinHandle<()> {
     let shared = shared.clone();
     let profile = shared.profile();
-    let name = profile.commands[index].display_name();
-    tracing::info!("▶ {name}  ({reason})");
-    fault::spawn(format!("command {name:?}"), move || {
-        execute(&shared, &profile, index)
-    })
+    let command = profile.commands[index].display_name();
+    tracing::info!("▶ {command}  ({reason})");
+    std::thread::Builder::new()
+        .name(format!("command {command:?}"))
+        .spawn(move || {
+            let began = Instant::now();
+            let error = execute(&shared, &profile, index)
+                .err()
+                .map(|e| format!("{e:#}"));
+            let outcome = Done {
+                command,
+                millis: began.elapsed().as_millis() as u64,
+                error,
+            };
+            finished(&outcome);
+            done(outcome);
+        })
+        .expect("failed to spawn thread")
 }
 
 pub fn execute(shared: &Shared, profile: &Profile, index: usize) -> Result<()> {
@@ -412,6 +452,49 @@ mod tests {
                 "mouse Right up"
             ]
         );
+    }
+
+    #[test]
+    fn a_command_reports_what_happened_to_whoever_fired_it() {
+        let spoken = Profile::parse(
+            r#"
+            [[command]]
+            phrase = "note"
+            no_target = true
+            actions = [{ do = "log", message = "hello" }]
+
+            [[command]]
+            phrase = "broken"
+            no_target = true
+            actions = [{ do = "run", program = "warcry-no-such-program" }]
+            "#,
+        )
+        .unwrap();
+        let shared = Shared::new(spoken);
+        let outcome = |index: usize| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            trigger(&shared, index, "test", move |done| drop(tx.send(done)))
+                .join()
+                .unwrap();
+            rx.recv().unwrap()
+        };
+        let worked = outcome(0);
+        assert_eq!(worked.command, "note");
+        assert_eq!(worked.error, None);
+        let failed = outcome(1);
+        assert_eq!(failed.command, "broken");
+        assert!(
+            failed.error.unwrap().contains("warcry-no-such-program"),
+            "a failure must name what went wrong"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_command_is_not_reported_as_a_failure() {
+        let cancelled: Result<()> = Err(Cancelled.into());
+        assert!(fault::ignore_cancel(cancelled).is_ok());
+        let real: Result<()> = Err(anyhow!("the window went away"));
+        assert!(fault::ignore_cancel(real).is_err());
     }
 
     #[test]

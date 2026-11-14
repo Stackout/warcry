@@ -229,6 +229,32 @@ and is gitignored; a PowerShell version would help on Windows.
   `accessibility: granted|DENIED` at startup. Screenshotting needs Screen Recording too, or
   `screencapture` silently returns wallpaper with every window stripped out.
 
+### Finding out why a command did not fire
+
+The app writes `warcry.log` into `WARCRY_HOME` (`~/Library/Application Support/warcry` by
+default), rotating the previous run to `warcry.log.1` at launch. Before that existed the only
+log was stdout -- which goes nowhere for a bundled `.app` -- and 500 lines of DOM in the Log
+tab, so a failure that happened five minutes ago could not be looked at.
+
+`actions::trigger` takes a callback and hands it a `Done { command, millis, error }` once the
+command has actually finished. The engine turns that into `Note::Done`, and the Live feed adds
+a red row for a failure and an amber one for anything slower than `SLOW_MS` (400ms). **Before
+this, `Note::Fired` was emitted *before* `execute` ran and nothing ever reported back, so the
+feed said "fired" whether or not a key ever left the process.**
+
+Two failures used to be completely silent and are now logged:
+
+- A command cancelled by another command's `stop_others` -- `fault::ignore_cancel` threw the
+  `Cancelled` away without a word.
+- Anything logged by `warcry_rig`, `warcry_ears`, `warcry_relay` or `warcry_link`. The
+  `EnvFilter` default was `warcry=info,warcry_app=info`, which matches none of them, so the
+  whole companion half of the app had never appeared in a log.
+
+Still unfixed and the most likely cause of "it triggered but nothing happened": `window::focus`
+polls `front()` up to 30 times and **sends the keys anyway** when the window never came forward,
+so they land in whichever client *is* focused. Each poll is an AppleScript round trip, so the
+real budget is seconds, not the 300ms the warning claims.
+
 ### Never block the main thread, and know how to find it when you do
 
 Five separate hangs came from blocking work on a thread that could not afford it. When
