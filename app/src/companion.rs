@@ -104,6 +104,8 @@ pub fn start(app: &AppHandle) -> Result<()> {
         Settings {
             pids: pids.clone(),
             names: settings.names.clone(),
+            quiet: settings.quiet,
+            min_level: settings.min_level,
             bind: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: settings.port,
             token,

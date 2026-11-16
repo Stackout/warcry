@@ -33,6 +33,8 @@ fn settings(token: Token) -> Settings {
     Settings {
         pids: Vec::new(),
         names: Vec::new(),
+        quiet: false,
+        min_level: 0.0,
         bind: IpAddr::V4(Ipv4Addr::LOCALHOST),
         port: 0,
         token,

@@ -193,7 +193,7 @@ const armCapture = (id, hint) => {
   })
 }
 
-const showEditor = (index, draft) => {
+const showEditor = (index, draft, editable = true) => {
   editing = index
   Object.entries(draftFields).forEach(([key, id]) => ($(id).value = draft[key] || ''))
   $('d-active').checked = !!draft.always_active
@@ -201,6 +201,8 @@ const showEditor = (index, draft) => {
   repaints.forEach((paint) => paint())
   $('d-head').textContent = index === null ? 'New command' : `Edit ${draft.name || 'this command'}`
   $('d-error').textContent = ''
+  $('d-locked').hidden = editable
+  $('d-keys').closest('label').hidden = !editable
   $('editor').showModal()
   $('d-name').focus()
 }
@@ -209,6 +211,11 @@ const hideEditor = () => {
   editing = null
   $('editor').close()
 }
+
+$('d-open').addEventListener('click', (event) => {
+  event.preventDefault()
+  call('open_profile')
+})
 
 const saveDraft = () => {
   const draft = Object.fromEntries(
@@ -299,9 +306,11 @@ const commandRow = (c) => el('tr', { hay: haystack(c) },
       textContent: 'Phone',
       onclick: () => call('set_pad', { index: c.index, on: !c.pad }).then(refresh),
     }),
-    c.editable
-      ? el('button', { textContent: 'Edit', onclick: () => showEditor(c.index, c.draft) })
-      : el('button', { disabled: true, title: 'too detailed to edit here, open the file instead', textContent: 'Edit' }),
+    el('button', {
+      textContent: 'Edit',
+      title: c.editable ? 'edit this command' : 'rename it here, the keys stay as they are',
+      onclick: () => showEditor(c.index, c.draft, c.editable),
+    }),
     el('button', { textContent: 'Delete', onclick: () => removeCommand(c) }),
   ),
 )

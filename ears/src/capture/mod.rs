@@ -16,13 +16,13 @@ mod imp {
         pub channels: usize,
     }
 
-    pub fn open(_pid: u32, _tx: Sender<Vec<f32>>) -> Result<Tap> {
+    pub fn open(_pid: u32, _tx: Sender<Vec<f32>>, _quiet: bool) -> Result<Tap> {
         bail!("per-window audio capture is not implemented on this platform yet")
     }
 }
 
 pub use imp::Tap;
 
-pub fn open(pid: u32, tx: Sender<Vec<f32>>) -> Result<Tap> {
-    imp::open(pid, tx)
+pub fn open(pid: u32, tx: Sender<Vec<f32>>, quiet: bool) -> Result<Tap> {
+    imp::open(pid, tx, quiet)
 }

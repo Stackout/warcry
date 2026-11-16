@@ -7,7 +7,7 @@ use objc2_core_audio::{
     AudioDeviceStop, AudioHardwareCreateAggregateDevice, AudioHardwareCreateProcessTap,
     AudioHardwareDestroyAggregateDevice, AudioHardwareDestroyProcessTap,
     AudioObjectGetPropertyData, AudioObjectID, AudioObjectPropertyAddress, CATapDescription,
-    kAudioAggregateDeviceIsPrivateKey, kAudioAggregateDeviceNameKey,
+    CATapMuteBehavior, kAudioAggregateDeviceIsPrivateKey, kAudioAggregateDeviceNameKey,
     kAudioAggregateDeviceTapAutoStartKey, kAudioAggregateDeviceTapListKey,
     kAudioAggregateDeviceUIDKey, kAudioHardwarePropertyTranslatePIDToProcessObject,
     kAudioObjectPropertyElementMain, kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject,
@@ -34,9 +34,9 @@ struct Sink {
     tx: Sender<Vec<f32>>,
 }
 
-pub fn open(pid: u32, tx: Sender<Vec<f32>>) -> Result<Tap> {
+pub fn open(pid: u32, tx: Sender<Vec<f32>>, quiet: bool) -> Result<Tap> {
     let process = process_object(pid)?;
-    let description = describe(process, pid);
+    let description = describe(process, pid, quiet);
     let uid = tap_uid(&description);
     let tap = create_tap(&description)?;
     attach(tap, &uid, pid, tx).inspect_err(|_| destroy_tap(tap))
@@ -147,14 +147,22 @@ fn address(selector: u32) -> AudioObjectPropertyAddress {
     }
 }
 
-fn describe(process: AudioObjectID, pid: u32) -> Retained<CATapDescription> {
+fn describe(process: AudioObjectID, pid: u32, quiet: bool) -> Retained<CATapDescription> {
     let processes = NSArray::from_retained_slice(&[NSNumber::new_u32(process)]);
     let description = unsafe {
         CATapDescription::initMonoMixdownOfProcesses(CATapDescription::alloc(), &processes)
     };
     unsafe { description.setName(&NSString::from_str(&format!("Warcry {pid}"))) };
     unsafe { description.setPrivate(true) };
+    unsafe { description.setMuteBehavior(mute(quiet)) };
     description
+}
+
+fn mute(quiet: bool) -> CATapMuteBehavior {
+    match quiet {
+        true => CATapMuteBehavior::Muted,
+        false => CATapMuteBehavior::Unmuted,
+    }
 }
 
 fn tap_uid(description: &CATapDescription) -> String {

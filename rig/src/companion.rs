@@ -32,6 +32,8 @@ pub type Hub = Box<dyn FnOnce(Rigs, Sender<Press>) -> Sender<Downlink> + Send>;
 pub struct Settings {
     pub pids: Vec<u32>,
     pub names: Vec<String>,
+    pub quiet: bool,
+    pub min_level: f32,
     pub bind: IpAddr,
     pub port: u16,
     pub token: warcry_link::Token,
@@ -180,6 +182,8 @@ fn ears(settings: &Settings, hold: &Sender<(u32, Event)>, watch: &Watch) -> (Vec
                 settings.sounds.clone(),
                 &settings.bite,
                 recorder,
+                settings.quiet,
+                settings.min_level,
             )
         });
         match opened {
@@ -454,10 +458,15 @@ pub fn downlinks(rig: RigId, event: &Event) -> Vec<Downlink> {
                 ends_in_ms: *ends_in_ms,
             })]
         }
-        Event::Observation(Observation::Bite { confidence, .. }) => vec![
-            alert(Alert::Bite {
-                confidence: *confidence,
-            }),
+        Event::Observation(Observation::Bite {
+            confidence, level, ..
+        }) => vec![
+            {
+                tracing::info!("bite at level {level:.4} (match {confidence:.2})");
+                alert(Alert::Bite {
+                    confidence: *confidence,
+                })
+            },
             state(RigState::Bite {
                 confidence: *confidence,
                 age_ms: 0,
@@ -628,6 +637,7 @@ mod tests {
             &Event::Observation(Observation::Bite {
                 confidence: 0.9,
                 into_cast_ms: 1200,
+                level: 0.02,
             }),
         );
         assert!(matches!(

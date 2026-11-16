@@ -55,6 +55,10 @@ pub struct Deck {
     wow: Option<PathBuf>,
     #[serde(default)]
     names: Vec<String>,
+    #[serde(default)]
+    quiet: bool,
+    #[serde(default)]
+    min_level: f32,
 }
 
 impl Default for Deck {
@@ -70,6 +74,8 @@ impl Default for Deck {
             speak: false,
             wow: None,
             names: Vec::new(),
+            quiet: false,
+            min_level: 0.0,
         }
     }
 }
@@ -189,12 +195,15 @@ impl Draft {
         }
     }
 
-    fn command(self) -> Result<Command, String> {
-        let keys = self.keys.trim();
-        if keys.is_empty() {
+    fn command(self, existing: Option<&Command>) -> Result<Command, String> {
+        let keys = self.keys.trim().to_string();
+        let kept = existing.filter(|_| keys.is_empty());
+        if keys.is_empty() && kept.is_none() {
             return Err("give the command a key to press".into());
         }
-        Key::parse_combo(keys).map_err(fail)?;
+        if !keys.is_empty() {
+            Key::parse_combo(&keys).map_err(fail)?;
+        }
         let some = |text: String| Some(text.trim().to_string()).filter(|t| !t.is_empty());
         Ok(Command {
             name: some(self.name),
@@ -202,8 +211,13 @@ impl Draft {
             hotkey: some(self.hotkey),
             always_active: self.always_active,
             pad: self.pad,
-            actions: vec![press(keys)],
-            ..Command::default()
+            actions: match kept {
+                Some(old) => old.actions.clone(),
+                None => vec![press(&keys)],
+            },
+            stop_others: kept.is_some_and(|old| old.stop_others),
+            no_target: kept.is_some_and(|old| old.no_target),
+            target: kept.and_then(|old| old.target.clone()),
         })
     }
 }
@@ -750,19 +764,22 @@ fn with_profile(
 
 #[tauri::command]
 fn edit_command(app: AppHandle, index: Option<usize>, draft: Draft) -> Result<(), String> {
-    let command = draft.command()?;
-    with_profile(&app, move |profile| match index {
-        None => {
-            profile.commands.push(command);
-            Ok(())
-        }
-        Some(at) => match profile.commands.get_mut(at) {
-            None => Err(format!("there is no command {at} to edit")),
-            Some(slot) => {
-                *slot = command;
+    with_profile(&app, move |profile| {
+        let existing = index.and_then(|at| profile.commands.get(at)).cloned();
+        let command = draft.command(existing.as_ref())?;
+        match index {
+            None => {
+                profile.commands.push(command);
                 Ok(())
             }
-        },
+            Some(at) => match profile.commands.get_mut(at) {
+                None => Err(format!("there is no command {at} to edit")),
+                Some(slot) => {
+                    *slot = command;
+                    Ok(())
+                }
+            },
+        }
     })
 }
 
@@ -874,7 +891,9 @@ async fn set_deck(app: AppHandle, deck: Deck) -> Result<(), String> {
             || config.deck.trust != deck.trust
             || config.deck.advertise != deck.advertise
             || config.deck.wow != deck.wow
-            || config.deck.names != deck.names;
+            || config.deck.names != deck.names
+            || config.deck.quiet != deck.quiet
+            || config.deck.min_level != deck.min_level;
         config.deck = deck;
         config.save().map_err(fail)?;
         moved && state.companion.lock().is_some()
@@ -1152,4 +1171,73 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Warcry");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use warcry::profile::MouseButton;
+
+    #[test]
+    fn editing_a_command_that_does_more_than_one_key_keeps_what_it_does() {
+        let fancy = Command {
+            name: Some("recast".into()),
+            actions: vec![
+                Action::Click {
+                    button: MouseButton::Right,
+                    count: 1,
+                    hold_ms: 0,
+                },
+                Action::Press {
+                    key: "'".into(),
+                    hold_ms: 0,
+                },
+            ],
+            stop_others: true,
+            no_target: true,
+            ..Command::default()
+        };
+        let draft = Draft {
+            name: "recast".into(),
+            phrase: "do it again".into(),
+            keys: String::new(),
+            pad: true,
+            ..Draft::default()
+        };
+        let saved = draft
+            .command(Some(&fancy))
+            .expect("renaming a complex command must be allowed");
+        assert_eq!(saved.actions.len(), 2);
+        assert!(saved.stop_others);
+        assert!(saved.no_target);
+        assert_eq!(saved.phrase.as_deref(), Some("do it again"));
+        assert!(saved.pad);
+    }
+
+    #[test]
+    fn a_new_command_still_needs_a_key() {
+        let empty = Draft {
+            name: "nothing".into(),
+            ..Draft::default()
+        };
+        assert!(empty.command(None).is_err());
+    }
+
+    #[test]
+    fn giving_a_simple_command_a_new_key_replaces_the_old_one() {
+        let old = Command {
+            actions: vec![Action::Press {
+                key: "f1".into(),
+                hold_ms: 0,
+            }],
+            ..Command::default()
+        };
+        let draft = Draft {
+            name: "eat".into(),
+            keys: "f7".into(),
+            ..Draft::default()
+        };
+        let saved = draft.command(Some(&old)).unwrap();
+        assert_eq!(keys_of(&saved).as_deref(), Some("f7"));
+    }
 }

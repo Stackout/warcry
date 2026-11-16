@@ -137,18 +137,30 @@ pub enum Outcome {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Observation {
-    Armed { ends_in_ms: u32 },
-    Bite { confidence: f32, into_cast_ms: u32 },
-    Disarmed { outcome: Outcome },
+    Armed {
+        ends_in_ms: u32,
+    },
+    Bite {
+        confidence: f32,
+        into_cast_ms: u32,
+        level: f32,
+    },
+    Disarmed {
+        outcome: Outcome,
+    },
 }
 
 pub struct ListenCfg {
     pub deaf_ms: u32,
+    pub min_level: f32,
 }
 
 impl Default for ListenCfg {
     fn default() -> Self {
-        ListenCfg { deaf_ms: 600 }
+        ListenCfg {
+            deaf_ms: 600,
+            min_level: 0.0,
+        }
     }
 }
 
@@ -156,6 +168,7 @@ pub struct Listener {
     armed: Option<Arm>,
     frames: u64,
     deaf_frames: u64,
+    min_level: f32,
 }
 
 struct Arm {
@@ -170,6 +183,7 @@ impl Listener {
             armed: None,
             frames: 0,
             deaf_frames: cfg.deaf_ms.div_ceil(FRAME_MS) as u64,
+            min_level: cfg.min_level,
         }
     }
 
@@ -210,15 +224,27 @@ impl Listener {
         })
     }
 
-    pub fn heard(&mut self, confidence: f32) -> Option<Observation> {
+    pub fn heard(&mut self, confidence: f32, level: f32) -> Option<Observation> {
         let arm = self.armed.as_ref()?;
         let elapsed = self.frames.saturating_sub(arm.started);
         (elapsed >= self.deaf_frames && !arm.fired).then_some(())?;
+        self.faint(level).then(|| {
+            tracing::debug!(
+                "a splash at level {level:.4} was too quiet to be your own bobber (needs {:.4})",
+                self.min_level
+            )
+        });
+        (!self.faint(level)).then_some(())?;
         self.armed.as_mut()?.fired = true;
         Some(Observation::Bite {
             confidence,
             into_cast_ms: elapsed as u32 * FRAME_MS,
+            level,
         })
+    }
+
+    fn faint(&self, level: f32) -> bool {
+        self.min_level > 0.0 && level < self.min_level
     }
 }
 
@@ -236,19 +262,50 @@ mod listener_tests {
     }
 
     #[test]
+    fn a_distant_splash_is_not_your_bobber() {
+        let mut listener = Listener::new(ListenCfg {
+            min_level: 0.02,
+            ..ListenCfg::default()
+        });
+        listener.cue(Cue::CastStarted { seconds: 30 });
+        (0..40).for_each(|_| {
+            listener.tick();
+        });
+        assert_eq!(
+            listener.heard(0.95, 0.004),
+            None,
+            "a quiet splash is somebody else fishing nearby"
+        );
+        assert!(
+            listener.heard(0.95, 0.031).is_some(),
+            "a loud splash is your own bobber"
+        );
+    }
+
+    #[test]
+    fn without_a_level_set_every_splash_still_counts() {
+        let mut listener = Listener::new(ListenCfg::default());
+        listener.cue(Cue::CastStarted { seconds: 30 });
+        (0..40).for_each(|_| {
+            listener.tick();
+        });
+        assert!(listener.heard(0.95, 0.0001).is_some());
+    }
+
+    #[test]
     fn a_sound_outside_a_cast_is_not_a_bite() {
         let mut listener = Listener::new(ListenCfg::default());
         (0..100).for_each(|_| {
             listener.tick();
         });
-        assert_eq!(listener.heard(0.9), None);
+        assert_eq!(listener.heard(0.9, 1.0), None);
     }
 
     #[test]
     fn a_sound_inside_a_cast_is_a_bite() {
         let mut listener = armed();
         assert!(matches!(
-            listener.heard(0.87),
+            listener.heard(0.87, 1.0),
             Some(Observation::Bite { confidence, .. }) if confidence == 0.87
         ));
     }
@@ -256,8 +313,8 @@ mod listener_tests {
     #[test]
     fn only_the_first_sound_in_a_cast_is_a_bite() {
         let mut listener = armed();
-        assert!(listener.heard(0.9).is_some());
-        assert_eq!(listener.heard(0.9), None);
+        assert!(listener.heard(0.9, 1.0).is_some());
+        assert_eq!(listener.heard(0.9, 1.0), None);
     }
 
     #[test]
@@ -265,11 +322,15 @@ mod listener_tests {
         let mut listener = Listener::new(ListenCfg::default());
         listener.cue(Cue::CastStarted { seconds: 30 });
         listener.tick();
-        assert_eq!(listener.heard(0.99), None, "fired during the cast sound");
+        assert_eq!(
+            listener.heard(0.99, 1.0),
+            None,
+            "fired during the cast sound"
+        );
         (0..40).for_each(|_| {
             listener.tick();
         });
-        assert!(listener.heard(0.99).is_some());
+        assert!(listener.heard(0.99, 1.0).is_some());
     }
 
     #[test]
@@ -284,7 +345,7 @@ mod listener_tests {
             }]
         );
         assert!(!listener.is_armed());
-        assert_eq!(listener.heard(0.99), None);
+        assert_eq!(listener.heard(0.99, 1.0), None);
     }
 
     #[test]
@@ -296,7 +357,7 @@ mod listener_tests {
                 outcome: Outcome::Caught
             })
         );
-        assert_eq!(listener.heard(0.99), None);
+        assert_eq!(listener.heard(0.99, 1.0), None);
     }
 
     #[test]

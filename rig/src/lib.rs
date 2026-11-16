@@ -53,6 +53,13 @@ impl Pipeline {
         }
     }
 
+    pub fn listen_above(&mut self, min_level: f32) {
+        self.listener = Listener::new(ListenCfg {
+            min_level,
+            ..ListenCfg::default()
+        });
+    }
+
     pub fn push(&mut self, samples: &[f32]) -> Vec<Event> {
         self.advance(samples).events
     }
@@ -77,10 +84,11 @@ impl Pipeline {
             })
             .collect();
         let bite = self.bite.clone();
+        let level = warcry::audio::rms_of(frame);
         let bites: Vec<Event> = heard
             .iter()
             .filter(|sound| sound.name == bite)
-            .filter_map(|sound| self.listener.heard(sound.score))
+            .filter_map(|sound| self.listener.heard(sound.score, level))
             .map(Event::Observation)
             .collect();
         beacon
@@ -111,15 +119,18 @@ pub fn attach(
     sounds: Vec<Sound>,
     bite: &str,
     recorder: Option<record::Recorder>,
+    quiet: bool,
+    min_level: f32,
 ) -> Result<Tap> {
     let (audio_tx, audio) = unbounded();
-    let tap = capture::open(pid, audio_tx)?;
+    let tap = capture::open(pid, audio_tx, quiet)?;
     let rate = tap.rate;
     let bite = bite.to_string();
     std::thread::Builder::new()
         .name(format!("rig-{pid}"))
         .spawn(move || {
             let mut pipeline = Pipeline::with_sounds(rate, sounds, &bite);
+            pipeline.listen_above(min_level);
             let mut recorder = recorder;
             while let Ok(samples) = audio.recv() {
                 let tick = pipeline.advance(&samples);

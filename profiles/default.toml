@@ -11,12 +11,12 @@ mode = "focus_restore"
 [[command]]
 name = "cast"
 phrase = "[cast;throw] [the;my;] [line;rod;pole;]"
-actions = [{ do = "click", button = "right" }]
+actions = [{ do = "press", key = "'" }]
 
 [[command]]
 name = "reel"
 phrase = "[reel;pull] [it;] in;hook [it;];reel"
-actions = [{ do = "click", button = "right" }]
+actions = [{ do = "press", key = "'" }]
 
 [[command]]
 name = "recast"

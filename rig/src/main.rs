@@ -426,7 +426,7 @@ const REACTION_FLOOR: f32 = 0.08;
 fn teach(pid: Option<u32>, name: String, want: usize, out: PathBuf) -> Result<()> {
     let pid = pid.map(Ok).unwrap_or_else(sole_window)?;
     let (audio_tx, audio) = crossbeam_channel::unbounded();
-    let tap = warcry_ears::capture::open(pid, audio_tx)?;
+    let tap = warcry_ears::capture::open(pid, audio_tx, false)?;
     let mut resampler = warcry_ears::resample::Resampler::new(tap.rate);
     let ring_len = (warcry_ears::RATE as f32 * (LOOKBACK + 0.5)) as usize;
     let mut ring: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
@@ -633,6 +633,8 @@ fn listen(options: Listening) -> Result<()> {
     let settings = Settings {
         pids: pids.clone(),
         names: names.clone(),
+        quiet: false,
+        min_level: 0.0,
         bind: bind.unwrap_or(match serve {
             true => std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
             false => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
@@ -795,8 +797,9 @@ fn report(label: &str, event: &Event) {
         Event::Observation(Observation::Bite {
             confidence,
             into_cast_ms,
+            level,
         }) => println!(
-            "[{label}] BITE  confidence {confidence:.2}  {:.1}s into the cast",
+            "[{label}] BITE  confidence {confidence:.2}  level {level:.4}  {:.1}s into the cast",
             *into_cast_ms as f32 / 1000.0
         ),
         Event::Observation(observation) => println!("[{label}] {observation:?}"),
