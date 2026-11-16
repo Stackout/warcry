@@ -15,12 +15,14 @@ use warcry_rig::{deck, find};
 
 const BOBBER: &str = include_str!("../../sounds/bobber.json");
 const BITE: &str = "bobber";
+const RETRY: std::time::Duration = std::time::Duration::from_secs(15);
 
 pub struct Live {
     pub companion: Companion,
     pub qr: String,
     characters: Vec<String>,
     wanted: Vec<u32>,
+    attached: std::time::Instant,
 }
 
 #[derive(Clone, Serialize)]
@@ -129,6 +131,7 @@ pub fn start(app: &AppHandle) -> Result<()> {
         qr,
         characters: warcry_rig::names::Names::all(&flavor(&settings)),
         wanted: pids,
+        attached: std::time::Instant::now(),
     });
     Ok(())
 }
@@ -144,19 +147,41 @@ pub fn halt(app: &AppHandle) {
     drop(live);
 }
 
+struct Attached<'a> {
+    wanted: &'a [u32],
+    deaf: bool,
+    waited: std::time::Duration,
+}
+
+fn why_restart(attached: Option<Attached>, enabled: bool, found: &[u32]) -> Option<&'static str> {
+    let Some(attached) = attached else {
+        return enabled.then_some("the phone deck is on with no companion");
+    };
+    (attached.wanted != found)
+        .then_some("the game windows changed")
+        .or_else(|| {
+            (attached.deaf && attached.waited >= RETRY)
+                .then_some("a game window could not be heard")
+        })
+}
+
 pub fn rescan(app: &AppHandle) {
     let state = app.state::<App>();
-    let stale = {
+    let found = wow();
+    let reason = {
         let live = state.companion.lock();
-        match live.as_ref() {
-            Some(live) => live.wanted != wow(),
-            None => state.config.lock().deck.enabled,
-        }
+        let enabled = state.config.lock().deck.enabled;
+        let attached = live.as_ref().map(|live| Attached {
+            wanted: &live.wanted,
+            deaf: !live.companion.deaf.is_empty(),
+            waited: live.attached.elapsed(),
+        });
+        why_restart(attached, enabled, &found)
     };
-    if !stale {
+    let Some(reason) = reason else {
         return;
-    }
-    tracing::info!("the game windows changed, reattaching the companion");
+    };
+    tracing::info!("{reason}, reattaching the companion");
     halt(app);
     let started = start(app);
     drop(app.emit("changed", ()));
@@ -510,5 +535,31 @@ mod tests {
         assert_eq!(window_pid(&pids, &press(1)), Some(42003));
         assert_eq!(window_pid(&pids, &press(2)), None);
         assert_eq!(window_pid(&pids, &press(deck::DECK)), None);
+    }
+
+    #[test]
+    fn a_window_that_could_not_be_heard_is_retried_but_not_every_probe() {
+        let attached = |deaf, secs| {
+            Some(Attached {
+                wanted: &[41951],
+                deaf,
+                waited: std::time::Duration::from_secs(secs),
+            })
+        };
+        assert_eq!(why_restart(attached(false, 600), true, &[41951]), None);
+        assert_eq!(why_restart(attached(true, 2), true, &[41951]), None);
+        assert_eq!(
+            why_restart(attached(true, 20), true, &[41951]),
+            Some("a game window could not be heard")
+        );
+        assert_eq!(
+            why_restart(attached(false, 1), true, &[99999]),
+            Some("the game windows changed")
+        );
+        assert_eq!(
+            why_restart(None, true, &[]),
+            Some("the phone deck is on with no companion")
+        );
+        assert_eq!(why_restart(None, false, &[]), None);
     }
 }
