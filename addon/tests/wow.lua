@@ -73,7 +73,7 @@ function wow.reset()
   wow.subzone = "Thousand Needles"
   Auctionator = makeAuctionator()
   WarcryLedgerDB = nil
-  Warcry = { casting = false, on = function() end, emit = function() end }
+  Warcry = { casting = false, castEndedAt = 0, on = function() end, emit = function() end }
 end
 
 Auctionator = makeAuctionator()

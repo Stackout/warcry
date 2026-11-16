@@ -4,6 +4,7 @@ local TOP = 5
 
 local ledger = {}
 local ui = {}
+local told
 
 local function itemInfo(link)
   local getter = C_Item and C_Item.GetItemInfo or GetItemInfo
@@ -114,7 +115,8 @@ function ledger.settled(caught)
 end
 
 local function open()
-  return GetTime() - castEnded < GRACE
+  local ended = math.max(Warcry.castEndedAt or 0, castEnded)
+  return ended > 0 and GetTime() - ended < GRACE
 end
 
 function ledger.loot(link, count)
@@ -141,7 +143,14 @@ function ledger.loot(link, count)
   here.catches = here.catches + count
   here.auction = here.auction + auction * count
   here.seconds = session.seconds
+  told(name, count, auction * count, vendor * count)
   ui.refresh()
+end
+
+function ledger.chatty()
+  local db = store()
+  db.quiet = not db.quiet
+  return not db.quiet
 end
 
 function ledger.perHour(copper, seconds)
@@ -185,6 +194,17 @@ function ledger.summary()
     zone = zone(),
     best = ledger.best(session.fish, TOP),
   }
+end
+
+function told(name, count, auction, vendor)
+  if store().quiet then
+    return
+  end
+  local worth = math.max(auction, vendor)
+  print(string.format(
+    "|cffffb347Warcry|r: %s x%d  %s  (%d this session)",
+    name, count, GetCoinTextureString(worth), session.catches
+  ))
 end
 
 local function money(copper)

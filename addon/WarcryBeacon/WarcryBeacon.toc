@@ -2,7 +2,7 @@
 ## Title: |cffffb347Warcry Beacon|r
 ## Notes: Plays short tones so the Warcry companion can follow what the game is doing.|n|nReads only what the addon API offers and plays sounds. It never presses anything.
 ## Author: Stackout
-## Version: 2
+## Version: 3
 ## IconTexture: Interface\Icons\INV_Fishingpole_02
 ## Category: Professions
 ## SavedVariables: WarcryLedgerDB

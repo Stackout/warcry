@@ -131,6 +131,7 @@ local function stopped(spellID)
     return
   end
   Warcry.casting = false
+  Warcry.castEndedAt = GetTime()
   C_Timer.After(SETTLE, function()
     Warcry.emit("settled", looted)
     if looted then
@@ -208,7 +209,7 @@ frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
 frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 
 local function help()
-  print("|cffffb347Warcry|r: /warcry gold, /warcry reset, /warcry id")
+  print("|cffffb347Warcry|r: /warcry gold, /warcry quiet, /warcry reset, /warcry id")
 end
 
 SLASH_WARCRY1 = "/warcry"
@@ -216,6 +217,11 @@ SlashCmdList.WARCRY = function(argument)
   local word = string.lower(string.trim(argument or ""))
   if word == "gold" or word == "fish" then
     Warcry.goldUI.toggle()
+    return
+  end
+  if word == "quiet" then
+    local on = Warcry.ledger.chatty()
+    print("|cffffb347Warcry|r: catch messages " .. (on and "on" or "off"))
     return
   end
   if word == "reset" then

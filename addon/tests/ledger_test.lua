@@ -27,8 +27,10 @@ local function fish(ledger, id, name, count)
   Warcry.casting = true
   ledger.cast()
   wow.now = wow.now + 20
-  ledger.loot(wow.link(id, name), count or 1)
   Warcry.casting = false
+  Warcry.castEndedAt = wow.now
+  ledger.loot(wow.link(id, name), count or 1)
+  wow.now = wow.now + 0.6
   ledger.settled(true)
 end
 
@@ -40,6 +42,19 @@ do
   ledger.settled(false)
   local s = ledger.summary()
   check("a cast with no loot is a miss", s.casts .. "/" .. s.catches .. "/" .. s.missed, "1/0/1")
+end
+
+do
+  local ledger = load()
+  wow.prices[13756] = 5000
+  Warcry.casting = true
+  ledger.cast()
+  wow.now = wow.now + 20
+  Warcry.casting = false
+  Warcry.castEndedAt = wow.now
+  ledger.loot(wow.link(13756, "Raw Summer Bass"), 1)
+  check("loot arriving after the channel stops still counts", ledger.summary().catches, 1)
+  check("and it is still worth its price", ledger.summary().gold, 5000)
 end
 
 do
