@@ -429,6 +429,7 @@ pre.macro-body {
 }
 .seats b { font-size: 12px; font-weight: 600; }
 .seats .meta { font-size: 11px; }
+.seats .seat-who { width: 100%; margin: 2px 0; }
 .seats .phrases { display: flex; flex-wrap: wrap; gap: 5px; }
 .seats .phrases span { font-size: 11px; padding: 2px 7px; border-radius: var(--radius); background: var(--raised-2); color: var(--muted); }
 

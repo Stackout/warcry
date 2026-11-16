@@ -19,6 +19,7 @@ const BITE: &str = "bobber";
 pub struct Live {
     pub companion: Companion,
     pub qr: String,
+    characters: Vec<String>,
     wanted: Vec<u32>,
 }
 
@@ -41,6 +42,7 @@ pub struct Seat {
 #[derive(Serialize)]
 pub struct View {
     pub running: bool,
+    pub characters: Vec<String>,
     pub url: Option<String>,
     pub qr: Option<String>,
     pub port: Option<u16>,
@@ -58,6 +60,7 @@ pub fn view(state: &App) -> View {
     let Some(live) = live.as_ref() else {
         return View {
             running: false,
+            characters: Vec::new(),
             url: None,
             qr: None,
             port: None,
@@ -68,6 +71,7 @@ pub fn view(state: &App) -> View {
     };
     View {
         running: true,
+        characters: live.characters.clone(),
         url: Some(live.companion.url.clone()),
         qr: Some(live.qr.clone()),
         port: Some(live.companion.port()),
@@ -97,6 +101,7 @@ pub fn start(app: &AppHandle) -> Result<()> {
     let companion = Companion::start(
         Settings {
             pids: pids.clone(),
+            names: settings.names.clone(),
             bind: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: settings.port,
             token,
@@ -122,6 +127,7 @@ pub fn start(app: &AppHandle) -> Result<()> {
     *state.companion.lock() = Some(Live {
         companion,
         qr,
+        characters: warcry_rig::names::Names::all(&flavor(&settings)),
         wanted: pids,
     });
     Ok(())

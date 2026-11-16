@@ -51,6 +51,8 @@ pub struct Deck {
     key: String,
     speak: bool,
     wow: Option<PathBuf>,
+    #[serde(default)]
+    names: Vec<String>,
 }
 
 impl Default for Deck {
@@ -65,6 +67,7 @@ impl Default for Deck {
             key: "'".into(),
             speak: false,
             wow: None,
+            names: Vec::new(),
         }
     }
 }
@@ -862,7 +865,8 @@ async fn set_deck(app: AppHandle, deck: Deck) -> Result<(), String> {
         let moved = config.deck.port != deck.port
             || config.deck.trust != deck.trust
             || config.deck.advertise != deck.advertise
-            || config.deck.wow != deck.wow;
+            || config.deck.wow != deck.wow
+            || config.deck.names != deck.names;
         config.deck = deck;
         config.save().map_err(fail)?;
         moved && state.companion.lock().is_some()

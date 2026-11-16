@@ -27,6 +27,13 @@ impl Names {
         }
     }
 
+    pub fn all(flavor: &Path) -> Vec<String> {
+        let mut found: Vec<String> = characters(flavor);
+        found.sort();
+        found.dedup();
+        found
+    }
+
     pub fn known(&self) -> usize {
         self.by_identity
             .values()

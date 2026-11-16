@@ -32,6 +32,7 @@ fn profile() -> Profile {
 fn settings(token: Token) -> Settings {
     Settings {
         pids: Vec::new(),
+        names: Vec::new(),
         bind: IpAddr::V4(Ipv4Addr::LOCALHOST),
         port: 0,
         token,

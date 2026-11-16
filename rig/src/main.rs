@@ -63,6 +63,8 @@ enum Command {
     Listen {
         #[arg(long)]
         pid: Vec<u32>,
+        #[arg(long)]
+        name: Vec<String>,
         #[arg(long, default_value = "/Applications/World of Warcraft")]
         wow_root: PathBuf,
         #[arg(long, default_value = "_forever_")]
@@ -129,6 +131,7 @@ fn main() -> Result<()> {
         } => teach(pid, name, want, out),
         Command::Listen {
             pid,
+            name,
             wow_root,
             flavor,
             serve,
@@ -146,6 +149,7 @@ fn main() -> Result<()> {
             trust_network,
         } => listen(Listening {
             pids: pid,
+            names: name,
             flavor: wow_root.join(flavor),
             serve,
             port,
@@ -521,6 +525,7 @@ fn windows() -> Result<()> {
 
 struct Listening {
     pids: Vec<u32>,
+    names: Vec<String>,
     flavor: PathBuf,
     serve: bool,
     port: u16,
@@ -567,6 +572,7 @@ fn load_sounds(path: Option<&std::path::Path>) -> Result<Vec<warcry_ears::librar
 fn listen(options: Listening) -> Result<()> {
     let Listening {
         pids,
+        names,
         flavor,
         serve,
         port,
@@ -626,6 +632,7 @@ fn listen(options: Listening) -> Result<()> {
 
     let settings = Settings {
         pids: pids.clone(),
+        names: names.clone(),
         bind: bind.unwrap_or(match serve {
             true => std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
             false => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
@@ -646,7 +653,7 @@ fn listen(options: Listening) -> Result<()> {
             .transpose()?,
     };
     let sink = Arc::new(Mutex::new(keystrokes()));
-    let seats = Arc::new(Mutex::new(warcry_rig::companion::roster(&pids)));
+    let seats = Arc::new(Mutex::new(warcry_rig::companion::roster(&pids, &names)));
     let fire: companion::Fire = {
         let (sink, seats, titles) = (sink.clone(), seats.clone(), titles.clone());
         Arc::new(move |press| {

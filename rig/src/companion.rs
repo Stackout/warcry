@@ -31,6 +31,7 @@ pub type Hub = Box<dyn FnOnce(Rigs, Sender<Press>) -> Sender<Downlink> + Send>;
 
 pub struct Settings {
     pub pids: Vec<u32>,
+    pub names: Vec<String>,
     pub bind: IpAddr,
     pub port: u16,
     pub token: warcry_link::Token,
@@ -97,7 +98,7 @@ impl Companion {
         fire: Fire,
         watch: Watch,
     ) -> Result<Companion> {
-        let registry = Arc::new(Mutex::new(roster(&settings.pids)));
+        let registry = Arc::new(Mutex::new(roster(&settings.pids, &settings.names)));
         let (hold, events) = unbounded();
         let (taps, deaf) = ears(&settings, &hold, &watch);
         let rigs = composed(registry.clone(), extra.clone());
@@ -109,7 +110,10 @@ impl Companion {
             (hold, events),
             relay.clone(),
             registry.clone(),
-            settings.flavor.clone(),
+            Naming {
+                flavor: settings.flavor.clone(),
+                chosen: settings.names.clone(),
+            },
             also,
             quit.clone(),
             watch,
@@ -278,11 +282,39 @@ fn fired(fire: &Fire, press: Press) -> Seen {
     }
 }
 
+pub struct Naming {
+    pub flavor: PathBuf,
+    pub chosen: Vec<String>,
+}
+
+struct Labels {
+    known: Names,
+    chosen: Vec<String>,
+}
+
+impl Labels {
+    fn scan(naming: Naming) -> Labels {
+        Labels {
+            known: Names::scan(&naming.flavor),
+            chosen: naming.chosen,
+        }
+    }
+
+    fn label(&self, rig: RigId, identity: u16) -> Option<String> {
+        chosen(&self.chosen, rig as usize).is_none().then(|| {
+            self.known
+                .label(identity)
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("character {identity:#05o}"))
+        })
+    }
+}
+
 fn hearing(
     channel: Feed,
     relay: Arc<Relay>,
     registry: Arc<Mutex<Vec<RigInfo>>>,
-    flavor: PathBuf,
+    naming: Naming,
     also: Option<Sender<Downlink>>,
     quit: Arc<AtomicBool>,
     watch: Watch,
@@ -291,13 +323,13 @@ fn hearing(
         .name("companion-events".into())
         .spawn(move || {
             let (_hold, events) = channel;
-            let names = Names::scan(&flavor);
+            let labels = Labels::scan(naming);
             while !quit.load(SeqCst) {
                 let Ok((pid, event)) = events.recv_timeout(POLL) else {
                     continue;
                 };
                 let rig = rig_of(&registry, pid);
-                identify(&registry, rig, &event, &names)
+                identify(&registry, rig, &event, &labels)
                     .into_iter()
                     .for_each(|label| watch(Seen::Named { rig, label }));
                 let label = label_of(&registry, rig);
@@ -326,13 +358,20 @@ fn alerted(rig: RigId, label: &str, message: &Downlink) -> Option<Seen> {
     }
 }
 
-pub fn roster(pids: &[u32]) -> Vec<RigInfo> {
+pub fn chosen(names: &[String], index: usize) -> Option<String> {
+    names
+        .get(index)
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+pub fn roster(pids: &[u32], names: &[String]) -> Vec<RigInfo> {
     pids.iter()
         .enumerate()
         .map(|(index, pid)| RigInfo {
             id: index as RigId,
             kind: RigKind::Window,
-            label: format!("Window {}", index + 1),
+            label: chosen(names, index).unwrap_or_else(|| format!("Window {}", index + 1)),
             pid: *pid,
             actions: vec![
                 ActionSlot {
@@ -383,15 +422,12 @@ fn identify(
     registry: &Arc<Mutex<Vec<RigInfo>>>,
     rig: RigId,
     event: &Event,
-    names: &Names,
+    labels: &Labels,
 ) -> Option<String> {
     let Event::Beacon(Beacon::Identity(identity)) = event else {
         return None;
     };
-    let label = names
-        .label(*identity)
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("character {identity:#05o}"));
+    let label = labels.label(rig, *identity)?;
     registry
         .lock()
         .expect("registry poisoned")
@@ -541,12 +577,30 @@ mod tests {
     use super::*;
 
     fn registry() -> Arc<Mutex<Vec<RigInfo>>> {
-        Arc::new(Mutex::new(roster(&[4821, 4822])))
+        Arc::new(Mutex::new(roster(&[4821, 4822], &[])))
+    }
+
+    #[test]
+    fn a_chosen_name_labels_its_window_and_the_rest_stay_numbered() {
+        let made = roster(&[7, 9, 11], &["Sky-Warden".into(), "  ".into()]);
+        assert_eq!(made[0].label, "Sky-Warden");
+        assert_eq!(made[1].label, "Window 2");
+        assert_eq!(made[2].label, "Window 3");
+    }
+
+    #[test]
+    fn the_beacon_never_renames_a_window_you_named_yourself() {
+        let labels = Labels {
+            known: Names::scan(std::path::Path::new("/nonexistent/wow")),
+            chosen: vec!["Sky-Warden".into(), String::new()],
+        };
+        assert_eq!(labels.label(0, 123), None);
+        assert_eq!(labels.label(1, 123), Some("character 0o173".into()));
     }
 
     #[test]
     fn each_window_becomes_a_rig_with_a_cast_and_a_reel() {
-        let made = roster(&[7, 9]);
+        let made = roster(&[7, 9], &[]);
         assert_eq!(made.len(), 2);
         assert_eq!(made[1].pid, 9);
         assert_eq!(made[1].id, 1);

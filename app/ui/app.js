@@ -361,9 +361,24 @@ const renderAddon = () => call('wow_addon').then((installs) => {
   ))
 })
 
-const seatRow = (seat) => el('li', {},
+const assignSeat = (index, value) => {
+  const names = [...(state.deck.names || [])]
+  while (names.length <= index) names.push('')
+  names[index] = value
+  saveDeck({ names })
+}
+
+const seatPicker = (index, characters, chosen) => {
+  const picker = el('select', { className: 'seat-who' })
+  fill(picker, [['', `Window ${index + 1}`], ...characters.map((c) => [c, c])], chosen)
+  picker.onchange = () => assignSeat(index, picker.value)
+  return picker
+}
+
+const seatRow = (characters, chosen) => (seat, index) => el('li', {},
   el('b', { textContent: seat.label }),
   el('span', { className: 'meta', textContent: seat.deck ? 'your buttons' : `pid ${seat.pid}` }),
+  seat.deck ? el('span', {}) : seatPicker(index, characters, chosen[index] || ''),
   el('div', { className: 'phrases' }, ...seat.buttons.map((b) => el('span', { textContent: b }))),
 )
 
@@ -381,7 +396,9 @@ const renderPhone = (s) => {
   $('phone-copy').hidden = !live.running
   $('phone-qr').innerHTML = live.qr || ''
   $('phone-url').textContent = live.url || ''
-  $('phone-seats').replaceChildren(...(live.seats || []).map(seatRow))
+  $('phone-seats').replaceChildren(
+    ...(live.seats || []).map(seatRow(live.characters || [], s.deck.names || [])),
+  )
   fill($('phone-cast'), [['', 'just press a key'], ...names], s.deck.cast || '')
   fill($('phone-reel'), [['', 'just press a key'], ...names], s.deck.reel || '')
   const keep = (id, value) => document.activeElement === $(id) || ($(id).value = value)
