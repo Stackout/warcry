@@ -173,6 +173,7 @@ pub struct Gate {
     token: Token,
     opened_ms: u64,
     authed: bool,
+    trusted: bool,
     last_seq: Option<u64>,
     allowance: f32,
     refilled_ms: u64,
@@ -184,6 +185,7 @@ impl Gate {
             token,
             opened_ms: now_ms,
             authed: false,
+            trusted: false,
             last_seq: None,
             allowance: PRESS_BURST,
             refilled_ms: now_ms,
@@ -193,6 +195,7 @@ impl Gate {
     pub fn trusting(now_ms: u64) -> Self {
         Gate {
             authed: true,
+            trusted: true,
             ..Gate::new(Token::from_bytes([0; TOKEN_LEN]), now_ms)
         }
     }
@@ -211,6 +214,14 @@ impl Gate {
         protocol: u16,
         now_ms: u64,
     ) -> Result<(), Denied> {
+        if self.trusted {
+            return match protocol == crate::PROTOCOL {
+                true => Ok(()),
+                false => Err(Denied::ProtocolMismatch {
+                    server: crate::PROTOCOL,
+                }),
+            };
+        }
         if self.authed {
             return Err(Denied::AlreadyAuthenticated);
         }
@@ -277,6 +288,33 @@ mod tests {
             seq,
             at_ms: 0,
         }
+    }
+
+    #[test]
+    fn a_trusted_gate_welcomes_a_client_that_says_hello_anyway() {
+        let mut gate = Gate::trusting(0);
+        assert!(gate.is_authenticated());
+        assert_eq!(
+            gate.authenticate(&Token::from_bytes([9; TOKEN_LEN]), crate::PROTOCOL, 0),
+            Ok(())
+        );
+        assert_eq!(
+            gate.authenticate(&Token::from_bytes([0; TOKEN_LEN]), crate::PROTOCOL + 1, 0),
+            Err(Denied::ProtocolMismatch {
+                server: crate::PROTOCOL
+            })
+        );
+    }
+
+    #[test]
+    fn a_token_gate_still_refuses_a_second_hello() {
+        let token = Token::from_bytes([7; TOKEN_LEN]);
+        let mut gate = Gate::new(token, 0);
+        assert_eq!(gate.authenticate(&token, crate::PROTOCOL, 0), Ok(()));
+        assert_eq!(
+            gate.authenticate(&token, crate::PROTOCOL, 0),
+            Err(Denied::AlreadyAuthenticated)
+        );
     }
 
     #[test]
