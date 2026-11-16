@@ -73,6 +73,9 @@ impl Pipeline {
 
     fn frame(&mut self, frame: &[f32]) -> Vec<Event> {
         let beacon = self.decoder.push(frame);
+        if let Some(heard) = beacon {
+            tracing::info!("beacon {heard:?} from the addon");
+        }
         let cued = beacon.and_then(|heard| self.cue(heard));
         let expired = self.listener.tick();
         let heard = self.library.push(frame);
@@ -206,6 +209,13 @@ mod tests {
         vec![learn("bobber", &examples, DEFAULT_FRAMES).unwrap()]
     }
 
+    fn cast_start(pipeline: &mut Pipeline) -> Vec<Event> {
+        let mut events = pipeline.push(&tone(FREQS[7], 150));
+        events.extend(pipeline.push(&hush(90)));
+        events.extend(pipeline.push(&tone(FREQS[0], 150)));
+        events
+    }
+
     fn bites(events: &[Event]) -> usize {
         events
             .iter()
@@ -216,7 +226,7 @@ mod tests {
     #[test]
     fn a_cast_then_the_taught_sound_is_a_bite() {
         let mut pipeline = Pipeline::with_sounds(DEVICE_RATE, taught(), "bobber");
-        let mut events = pipeline.push(&tone(FREQS[0], 150));
+        let mut events = cast_start(&mut pipeline);
         events.extend(pipeline.push(&hush(1_200)));
         events.extend(pipeline.push(&splash()));
         events.extend(pipeline.push(&hush(200)));
@@ -273,7 +283,7 @@ mod tests {
     #[test]
     fn only_the_first_sound_in_a_cast_is_a_bite() {
         let mut pipeline = Pipeline::with_sounds(DEVICE_RATE, taught(), "bobber");
-        let mut events = pipeline.push(&tone(FREQS[0], 150));
+        let mut events = cast_start(&mut pipeline);
         events.extend(pipeline.push(&hush(1_200)));
         events.extend(pipeline.push(&splash()));
         events.extend(pipeline.push(&hush(800)));

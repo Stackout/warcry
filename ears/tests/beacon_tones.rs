@@ -71,6 +71,10 @@ fn every_shipped_tone_decodes_to_the_event_the_addon_means() {
     ];
     for (symbol, want) in expected {
         let mut audio = silence(60);
+        if symbol == 0 {
+            audio.extend(decode(7));
+            audio.extend(silence(80));
+        }
         audio.extend(decode(symbol));
         audio.extend(silence(60));
         assert_eq!(
@@ -88,7 +92,7 @@ fn the_identity_sequence_the_addon_plays_decodes_to_one_identity() {
         return;
     }
     let mut audio = silence(60);
-    for symbol in [7u8, 5, 2, 7] {
+    for symbol in [7u8, 7, 5, 2, 7] {
         audio.extend(decode(symbol));
         audio.extend(silence(80));
     }

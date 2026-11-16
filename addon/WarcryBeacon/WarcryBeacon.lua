@@ -87,6 +87,7 @@ local function announce()
   end
   local id = hash(string.lower(name))
   emit(IDENTITY)
+  emit(IDENTITY)
   emit(math.floor(id / 64) % 8)
   emit(math.floor(id / 8) % 8)
   emit(id % 8)
@@ -122,6 +123,7 @@ local function started(spellID)
   looted = false
   Warcry.casting = true
   Warcry.emit("cast")
+  emit(IDENTITY)
   emit(CAST_STARTED)
   checkLure()
 end

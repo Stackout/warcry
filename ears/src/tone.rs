@@ -22,7 +22,7 @@ impl Default for ToneCfg {
         ToneCfg {
             window_frames: 2,
             hold_frames: 4,
-            dominance: 6.0,
+            dominance: 10.0,
             min_magnitude: 0.004,
             identity_window_frames: 75,
         }
@@ -51,6 +51,13 @@ fn beacon_for(symbol: u8) -> Option<Beacon> {
         5 => Some(Beacon::LureGone),
         6 => Some(Beacon::Attention),
         _ => None,
+    }
+}
+
+fn unframed(symbol: u8) -> Option<Beacon> {
+    match beacon_for(symbol) {
+        Some(Beacon::CastStarted) => None,
+        other => other,
     }
 }
 
@@ -106,6 +113,7 @@ pub struct Decoder {
     cfg: ToneCfg,
     run: Option<Run>,
     identity: Option<Identity>,
+    marked: Option<u32>,
 }
 
 struct Run {
@@ -126,11 +134,13 @@ impl Decoder {
             cfg,
             run: None,
             identity: None,
+            marked: None,
         }
     }
 
     pub fn push(&mut self, frame: &[f32]) -> Option<Beacon> {
         self.age_identity();
+        self.age_mark();
         let symbol = self.bank.push(frame).and_then(|mags| self.winner(&mags));
         let fresh = self.advance(symbol)?;
         self.accept(fresh)
@@ -178,6 +188,18 @@ impl Decoder {
     }
 
     fn accept(&mut self, symbol: u8) -> Option<Beacon> {
+        if self.identity.is_none() && self.marked.take().is_some() {
+            return match symbol == IDENTITY_MARK {
+                true => {
+                    self.identity = Some(Identity {
+                        digits: Vec::new(),
+                        age: 0,
+                    });
+                    None
+                }
+                false => beacon_for(symbol),
+            };
+        }
         match self.identity.take() {
             Some(mut pending) => {
                 pending.digits.push(symbol & 0x07);
@@ -195,14 +217,17 @@ impl Decoder {
                 }
             }
             None if symbol == IDENTITY_MARK => {
-                self.identity = Some(Identity {
-                    digits: Vec::new(),
-                    age: 0,
-                });
+                self.marked = Some(0);
                 None
             }
-            None => beacon_for(symbol),
+            None => unframed(symbol),
         }
+    }
+
+    fn age_mark(&mut self) {
+        self.marked = self
+            .marked
+            .and_then(|age| (age < self.cfg.identity_window_frames).then_some(age + 1));
     }
 
     fn age_identity(&mut self) {
@@ -245,22 +270,41 @@ mod tests {
             .collect()
     }
 
+    fn framed(symbol: usize) -> Vec<Vec<f32>> {
+        let mut frames = tone(FREQS[IDENTITY_MARK as usize], 150, 0.3);
+        frames.extend(hiss(80, 0.0005));
+        frames.extend(tone(FREQS[symbol], 150, 0.3));
+        frames
+    }
+
     fn drain(decoder: &mut Decoder, frames: Vec<Vec<f32>>) -> Vec<Beacon> {
         frames.iter().filter_map(|f| decoder.push(f)).collect()
     }
 
-    const SHIPPED_AMPLITUDE: f32 = 0.12;
+    const SHIPPED_AMPLITUDE: f32 = 0.20;
+
+    #[test]
+    fn a_game_sound_buried_in_noise_is_not_mistaken_for_a_beacon() {
+        let mut decoder = Decoder::new(ToneCfg::default());
+        let buried: Vec<Vec<f32>> = tone(FREQS[0], 200, 0.03)
+            .into_iter()
+            .zip(hiss(200, 0.02))
+            .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x + y).collect())
+            .collect();
+        assert!(
+            drain(&mut decoder, buried).is_empty(),
+            "a stray sound decoded as a cast arms the detector for 30s and reels with no cast out"
+        );
+    }
 
     #[test]
     fn the_tones_the_addon_ships_are_still_loud_enough_to_decode() {
         let mut decoder = Decoder::new(ToneCfg::default());
-        let beacons = drain(
-            &mut decoder,
-            tone(FREQS[0], 150, SHIPPED_AMPLITUDE)
-                .into_iter()
-                .chain(hiss(80, 0.01))
-                .collect(),
-        );
+        let mut frames = tone(FREQS[IDENTITY_MARK as usize], 150, SHIPPED_AMPLITUDE);
+        frames.extend(hiss(80, 0.01));
+        frames.extend(tone(FREQS[0], 150, SHIPPED_AMPLITUDE));
+        frames.extend(hiss(80, 0.01));
+        let beacons = drain(&mut decoder, frames);
         assert_eq!(
             beacons.len(),
             1,
@@ -271,12 +315,17 @@ mod tests {
     #[test]
     fn a_shipped_tone_survives_game_audio_underneath_it() {
         let mut decoder = Decoder::new(ToneCfg::default());
-        let mixed: Vec<Vec<f32>> = tone(FREQS[0], 150, SHIPPED_AMPLITUDE)
-            .into_iter()
-            .zip(hiss(150, 0.01))
-            .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x + y).collect())
-            .chain(hiss(80, 0.01))
-            .collect();
+        let under = |symbol: usize| -> Vec<Vec<f32>> {
+            tone(FREQS[symbol], 150, SHIPPED_AMPLITUDE)
+                .into_iter()
+                .zip(hiss(150, 0.01))
+                .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x + y).collect())
+                .collect()
+        };
+        let mut mixed = under(IDENTITY_MARK as usize);
+        mixed.extend(hiss(80, 0.01));
+        mixed.extend(under(0));
+        mixed.extend(hiss(80, 0.01));
         assert_eq!(drain(&mut decoder, mixed).len(), 1);
     }
 
@@ -293,7 +342,7 @@ mod tests {
         ];
         for (index, want) in expected.iter().enumerate() {
             let mut decoder = Decoder::new(ToneCfg::default());
-            let heard = drain(&mut decoder, tone(FREQS[index], 150, 0.3));
+            let heard = drain(&mut decoder, framed(index));
             assert_eq!(heard, vec![*want], "frequency {} misdecoded", FREQS[index]);
         }
     }
@@ -308,7 +357,7 @@ mod tests {
     #[test]
     fn two_tones_in_sequence_decode_separately() {
         let mut decoder = Decoder::new(ToneCfg::default());
-        let mut frames = tone(FREQS[0], 150, 0.3);
+        let mut frames = framed(0);
         frames.extend(hiss(80, 0.0005));
         frames.extend(tone(FREQS[2], 150, 0.3));
         assert_eq!(
@@ -346,6 +395,8 @@ mod tests {
     fn identity_takes_a_mark_and_three_digits() {
         let mut decoder = Decoder::new(ToneCfg::default());
         let mut frames = tone(FREQS[IDENTITY_MARK as usize], 150, 0.3);
+        frames.extend(hiss(80, 0.0005));
+        frames.extend(tone(FREQS[IDENTITY_MARK as usize], 150, 0.3));
         for digit in [5usize, 2, 7] {
             frames.extend(hiss(80, 0.0005));
             frames.extend(tone(FREQS[digit], 150, 0.3));
@@ -393,13 +444,16 @@ mod tests {
     #[test]
     fn a_tone_survives_being_mixed_under_game_noise() {
         let mut decoder = Decoder::new(ToneCfg::default());
-        let beacon = tone(FREQS[0], 200, 0.25);
-        let noise = hiss(200, 0.05);
-        let mixed: Vec<Vec<f32>> = beacon
-            .iter()
-            .zip(noise.iter())
-            .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x + y).collect())
-            .collect();
+        let under = |symbol: usize| -> Vec<Vec<f32>> {
+            tone(FREQS[symbol], 200, 0.25)
+                .iter()
+                .zip(hiss(200, 0.05).iter())
+                .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x + y).collect())
+                .collect()
+        };
+        let mut mixed = under(IDENTITY_MARK as usize);
+        mixed.extend(hiss(80, 0.0005));
+        mixed.extend(under(0));
         assert_eq!(drain(&mut decoder, mixed), vec![Beacon::CastStarted]);
     }
 
