@@ -18,7 +18,7 @@ end
 
 local TONES = "Interface\\AddOns\\WarcryBeacon\\tones\\"
 local SPACING = 0.23
-local SETTLE = 0.6
+local SETTLE = 1.0
 local LURE_WARNING = 60
 
 local CAST_STARTED = 0
@@ -174,6 +174,12 @@ end
 
 function handlers.LOOT_OPENED()
   looted = true
+end
+
+function handlers.CHAT_MSG_LOOT(message)
+  if string.find(message or "", "|Hitem:") then
+    looted = true
+  end
 end
 
 function handlers.UI_ERROR_MESSAGE(_, message)
