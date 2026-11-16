@@ -3,7 +3,7 @@ set -euo pipefail
 
 FREQS=(1300 1700 2150 2550 2950 3350 3750 4150)
 DURATION=0.15
-AMPLITUDE=0.25
+AMPLITUDE=0.12
 RATE=44100
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/WarcryBeacon/tones"
 

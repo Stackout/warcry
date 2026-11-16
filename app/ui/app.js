@@ -497,6 +497,8 @@ const renderPhone = (s) => {
   keep('phone-key', s.deck.key || '')
   keep('phone-port', s.deck.port)
   keep('phone-advertise', s.deck.advertise || '')
+  $('phone-quiet').checked = s.deck.quiet
+  $('phone-record').checked = !!s.deck.record
   $('phone-enabled').checked = s.deck.enabled
   $('phone-trust').checked = s.deck.trust
   $('phone-speak').checked = s.deck.speak
@@ -734,6 +736,8 @@ RAIL.forEach((button) => button.addEventListener('click', () => {
 }))
 
 $('fish-refresh').addEventListener('click', loadFishing)
+$('phone-quiet').addEventListener('change', (e) => saveDeck({ quiet: e.target.checked }))
+$('phone-record').addEventListener('change', (e) => saveDeck({ record: e.target.checked }))
 
 const SLASH = [
   ['#showtooltip', 'Show the icon and tooltip of whatever this macro would cast right now. Put it on the first line.'],

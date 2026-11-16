@@ -59,6 +59,8 @@ pub struct Deck {
     quiet: bool,
     #[serde(default)]
     min_level: f32,
+    #[serde(default)]
+    record: bool,
 }
 
 impl Default for Deck {
@@ -76,6 +78,7 @@ impl Default for Deck {
             names: Vec::new(),
             quiet: false,
             min_level: 0.0,
+            record: false,
         }
     }
 }
@@ -893,7 +896,8 @@ async fn set_deck(app: AppHandle, deck: Deck) -> Result<(), String> {
             || config.deck.wow != deck.wow
             || config.deck.names != deck.names
             || config.deck.quiet != deck.quiet
-            || config.deck.min_level != deck.min_level;
+            || config.deck.min_level != deck.min_level
+            || config.deck.record != deck.record;
         config.deck = deck;
         config.save().map_err(fail)?;
         moved && state.companion.lock().is_some()

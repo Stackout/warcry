@@ -249,6 +249,37 @@ mod tests {
         frames.iter().filter_map(|f| decoder.push(f)).collect()
     }
 
+    const SHIPPED_AMPLITUDE: f32 = 0.12;
+
+    #[test]
+    fn the_tones_the_addon_ships_are_still_loud_enough_to_decode() {
+        let mut decoder = Decoder::new(ToneCfg::default());
+        let beacons = drain(
+            &mut decoder,
+            tone(FREQS[0], 150, SHIPPED_AMPLITUDE)
+                .into_iter()
+                .chain(hiss(80, 0.01))
+                .collect(),
+        );
+        assert_eq!(
+            beacons.len(),
+            1,
+            "the addon plays its tones at {SHIPPED_AMPLITUDE}; quieter than the decoder can hear is a silent failure"
+        );
+    }
+
+    #[test]
+    fn a_shipped_tone_survives_game_audio_underneath_it() {
+        let mut decoder = Decoder::new(ToneCfg::default());
+        let mixed: Vec<Vec<f32>> = tone(FREQS[0], 150, SHIPPED_AMPLITUDE)
+            .into_iter()
+            .zip(hiss(150, 0.01))
+            .map(|(a, b)| a.iter().zip(b).map(|(x, y)| x + y).collect())
+            .chain(hiss(80, 0.01))
+            .collect();
+        assert_eq!(drain(&mut decoder, mixed).len(), 1);
+    }
+
     #[test]
     fn each_frequency_decodes_to_its_own_event() {
         let expected = [

@@ -209,7 +209,7 @@ frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
 frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 
 local function help()
-  print("|cffffb347Warcry|r: /warcry gold, /warcry quiet, /warcry reset, /warcry id")
+  print("|cffffb347Warcry|r: /warcry gold, /warcry chat, /warcry reset, /warcry id")
 end
 
 SLASH_WARCRY1 = "/warcry"
@@ -219,9 +219,13 @@ SlashCmdList.WARCRY = function(argument)
     Warcry.goldUI.toggle()
     return
   end
-  if word == "quiet" then
+  if word == "chat" then
     local on = Warcry.ledger.chatty()
-    print("|cffffb347Warcry|r: catch messages " .. (on and "on" or "off"))
+    print("|cffffb347Warcry|r: catch messages in chat " .. (on and "on" or "off"))
+    return
+  end
+  if word == "quiet" or word == "mute" then
+    print("|cffffb347Warcry|r: the beeps are how Warcry follows the game, so the addon cannot stop them. Mute World of Warcraft in the Warcry app instead (Phone tab), which silences the game to your speakers while Warcry still hears it.")
     return
   end
   if word == "reset" then

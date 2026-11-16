@@ -113,7 +113,7 @@ pub fn start(app: &AppHandle) -> Result<()> {
             advertise: settings.advertise.clone(),
             sounds: sounds(),
             bite: BITE.into(),
-            record: None,
+            record: settings.record.then(casts_dir),
             flavor: flavor(&settings),
             hub: None,
         },
@@ -201,6 +201,12 @@ pub fn announce(app: &AppHandle) {
         .lock()
         .iter()
         .for_each(|live| live.companion.announce());
+}
+
+fn casts_dir() -> PathBuf {
+    let dir = home().join("casts");
+    drop(std::fs::create_dir_all(&dir));
+    dir
 }
 
 pub fn flavor(settings: &Deck) -> PathBuf {
