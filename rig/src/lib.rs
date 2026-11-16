@@ -85,6 +85,17 @@ impl Pipeline {
             .collect();
         let bite = self.bite.clone();
         let level = warcry::audio::rms_of(frame);
+        let armed = self.listener.is_armed();
+        heard
+            .iter()
+            .filter(|sound| sound.name == bite)
+            .for_each(|sound| {
+                tracing::info!(
+                    "splash level {level:.4} match {:.2} {}",
+                    sound.score,
+                    ["(no cast of yours in flight)", "(during your cast)"][armed as usize]
+                )
+            });
         let bites: Vec<Event> = heard
             .iter()
             .filter(|sound| sound.name == bite)
