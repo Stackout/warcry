@@ -1,6 +1,6 @@
 use crate::{Event, Tick};
 use std::path::{Path, PathBuf};
-use warcry_ears::detect::Observation;
+use warcry_ears::detect::{Observation, Outcome};
 use warcry_ears::{RATE, rms};
 
 pub struct Recorder {
@@ -37,10 +37,9 @@ impl Recorder {
                 cast.levels.push(rms(frame));
             })
         });
-        tick.events
-            .iter()
-            .any(|event| matches!(event, Event::Observation(Observation::Disarmed { .. })))
-            .then(|| self.finish(pid));
+        if let Some(outcome) = tick.events.iter().find_map(ending) {
+            self.finish(pid, outcome);
+        }
     }
 
     fn mark(&mut self, event: &Event) {
@@ -52,17 +51,35 @@ impl Recorder {
         });
     }
 
-    fn finish(&mut self, pid: u32) {
+    fn finish(&mut self, pid: u32, outcome: Outcome) {
         let Some(cast) = self.cast.take() else {
             return;
         };
         self.casts += 1;
-        let path = self
-            .dir
-            .join(format!("cast-{pid}-{}-{:03}.wav", self.run, self.casts));
+        let path = self.dir.join(format!(
+            "cast-{pid}-{}-{:03}-{}.wav",
+            self.run,
+            self.casts,
+            ended(outcome)
+        ));
         let written = write_wav(&path, &cast.samples);
         println!("  recorded {} {}", path.display(), summary(&cast.levels));
         drop(written.inspect_err(|e| println!("  could not write {}: {e}", path.display())));
+    }
+}
+
+fn ending(event: &Event) -> Option<Outcome> {
+    match event {
+        Event::Observation(Observation::Disarmed { outcome }) => Some(*outcome),
+        _ => None,
+    }
+}
+
+fn ended(outcome: Outcome) -> &'static str {
+    match outcome {
+        Outcome::Caught => "caught",
+        Outcome::Expired => "expired",
+        Outcome::Cancelled => "cancelled",
     }
 }
 

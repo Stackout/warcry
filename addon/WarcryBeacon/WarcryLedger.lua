@@ -5,6 +5,20 @@ local TOP = 5
 local ledger = {}
 local ui = {}
 local told
+local coins
+
+function coins(copper)
+  local gold = math.floor(copper / 10000)
+  local silver = math.floor((copper % 10000) / 100)
+  local bronze = copper % 100
+  if gold > 0 then
+    return string.format("%dg %ds", gold, silver)
+  end
+  if silver > 0 then
+    return string.format("%ds %dc", silver, bronze)
+  end
+  return string.format("%dc", bronze)
+end
 
 local function itemInfo(link)
   local getter = C_Item and C_Item.GetItemInfo or GetItemInfo
@@ -203,7 +217,7 @@ function told(name, count, auction, vendor)
   local worth = math.max(auction, vendor)
   print(string.format(
     "|cffffb347Warcry|r: %s x%d  %s  (%d this session)",
-    name, count, GetCoinTextureString(worth), session.catches
+    name, count, coins(worth), session.catches
   ))
 end
 
@@ -211,7 +225,12 @@ local function money(copper)
   if copper <= 0 then
     return "0g"
   end
-  return GetCoinTextureString(copper)
+  local texture = GetCoinTextureString
+    or (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString)
+  if texture then
+    return texture(copper)
+  end
+  return coins(copper)
 end
 
 local function percent(part, whole)

@@ -228,29 +228,40 @@ fn replay(wavs: Vec<PathBuf>, sounds: PathBuf, bite: String) -> Result<()> {
     let mut curious = target.clone();
     curious.threshold = f32::NEG_INFINITY;
 
-    let scored: Vec<(String, f32, f32)> = wavs
+    let scored: Vec<(String, Measured)> = wavs
         .iter()
         .filter_map(|path| {
             let samples = warcry_rig::record::read_wav(path).ok()?;
-            let (best, at) = peak_score(&samples, curious.clone());
-            Some((short(path), best, at))
+            Some((
+                short(path),
+                measure(&samples, curious.clone(), target.threshold),
+            ))
         })
         .collect();
 
-    scored.iter().for_each(|(name, best, at)| {
-        let verdict = match *best >= target.threshold {
+    scored.iter().for_each(|(name, m)| {
+        let verdict = match m.best >= target.threshold {
             true => "HIT ",
             false => "MISS",
         };
-        println!("  {verdict} {name:<28} best {best:.3} at {at:5.2}s");
+        println!(
+            "  {verdict} {name:<28} best {:.3} at {:5.2}s   {} over threshold in {:.1}s",
+            m.best, m.at, m.over, m.seconds
+        );
     });
 
     let hits = scored
         .iter()
-        .filter(|(_, best, _)| *best >= target.threshold)
+        .filter(|(_, m)| m.best >= target.threshold)
         .count();
     println!("\n  {hits} of {} casts detected", scored.len());
-    let mut bests: Vec<f32> = scored.iter().map(|(_, best, _)| *best).collect();
+    let spare: usize = scored.iter().map(|(_, m)| m.over.saturating_sub(1)).sum();
+    let total: f32 = scored.iter().map(|(_, m)| m.seconds).sum();
+    println!(
+        "  {spare} matches beyond one per cast, {:.1} a minute of false reels",
+        spare as f32 / (total / 60.0).max(0.001)
+    );
+    let mut bests: Vec<f32> = scored.iter().map(|(_, m)| m.best).collect();
     bests.sort_by(|a, b| a.total_cmp(b));
     bests
         .first()
@@ -263,6 +274,43 @@ fn replay(wavs: Vec<PathBuf>, sounds: PathBuf, bite: String) -> Result<()> {
         )
     });
     Ok(())
+}
+
+struct Measured {
+    best: f32,
+    at: f32,
+    over: usize,
+    seconds: f32,
+}
+
+fn measure(samples: &[f32], curious: warcry_ears::library::Sound, threshold: f32) -> Measured {
+    let seconds = samples.len() as f32 / warcry_ears::RATE as f32;
+    let (best, at) = peak_score(samples, curious.clone());
+    let over = all_scores(samples, curious)
+        .iter()
+        .filter(|score| **score >= threshold)
+        .count();
+    Measured {
+        best,
+        at,
+        over,
+        seconds,
+    }
+}
+
+fn all_scores(samples: &[f32], curious: warcry_ears::library::Sound) -> Vec<f32> {
+    let mut library = warcry_ears::library::Library::new(vec![curious]);
+    samples
+        .chunks(warcry_ears::FRAME)
+        .filter(|frame| frame.len() == warcry_ears::FRAME)
+        .flat_map(|frame| {
+            library
+                .push(frame)
+                .into_iter()
+                .map(|heard| heard.score)
+                .collect::<Vec<f32>>()
+        })
+        .collect()
 }
 
 fn peak_score(samples: &[f32], curious: warcry_ears::library::Sound) -> (f32, f32) {
