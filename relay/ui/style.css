@@ -289,3 +289,49 @@ footer { display: flex; align-items: center; justify-content: space-between; pad
 .pad.refused { border-color: var(--bad); color: var(--bad); }
 
 .deck h2 { color: var(--dim); font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+.head-right { display: flex; align-items: center; gap: 10px; }
+
+.view { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; }
+.view[hidden] { display: none; }
+
+.search {
+  width: 100%; padding: 12px 14px; font-size: 16px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--edge); border-radius: 12px;
+  -webkit-appearance: none; appearance: none; outline: none;
+}
+.search:focus { border-color: var(--glow); }
+.search::placeholder { color: var(--dim); }
+
+#pads {
+  display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  overflow-y: auto; align-content: start; flex: 1; min-height: 0;
+  padding-bottom: 8px;
+}
+#pads .pad.wide { grid-column: 1 / -1; background: linear-gradient(180deg, #2a1748, #1d1030); border-color: var(--glow); }
+#pads .pad[hidden] { display: none; }
+
+.utility { display: flex; gap: 10px; }
+.utility .toggle { flex: 1; }
+
+.tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 6px 0 calc(env(safe-area-inset-bottom) + 4px);
+  border-top: 1px solid var(--edge); margin-top: 4px;
+}
+.tabs button {
+  display: grid; justify-items: center; gap: 3px; padding: 8px 4px;
+  background: none; border: 0; border-radius: 12px; color: var(--dim);
+  font: inherit; font-size: 11px; letter-spacing: 0.03em; cursor: pointer;
+}
+.tabs button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button em { font-style: normal; }
+.tabs button.on { color: var(--glow); background: var(--panel); }
+.tabs button.alert em::after {
+  content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 5px;
+  border-radius: 50%; background: var(--bad); vertical-align: middle;
+}
+
+#rigs { align-content: stretch; }
+#rigs .rig { min-height: min(46vh, 380px); }
+#rigs .rig .reel { flex: 1; min-height: 96px; font-size: 26px; }

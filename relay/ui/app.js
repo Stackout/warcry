@@ -264,16 +264,20 @@ const pad = (rig, action) => {
   return button
 }
 
+const PINNED = /^(mic|listen|microphone)$/i
+
 const deck = (rig) => {
-  const card = document.createElement('section')
-  card.className = 'rig deck'
-  const heading = document.createElement('h2')
-  heading.textContent = rig.label
-  const grid = document.createElement('div')
-  grid.className = 'pads'
-  rig.actions.forEach((action) => grid.append(pad(rig, action)))
-  card.append(heading, grid)
-  return card
+  const host = el('pads')
+  host.textContent = ''
+  const ordered = [...rig.actions].sort(
+    (a, b) => Number(PINNED.test(b.label)) - Number(PINNED.test(a.label))
+  )
+  ordered.forEach((action) => {
+    const button = pad(rig, action)
+    PINNED.test(action.label) && button.classList.add('wide')
+    host.append(button)
+  })
+  filterPads()
 }
 
 const fishing = (rig, host) => {
@@ -282,13 +286,26 @@ const fishing = (rig, host) => {
   host.append(made.card)
 }
 
+const filterPads = () => {
+  const needle = el('search').value.trim().toLowerCase()
+  const buttons = [...el('pads').querySelectorAll('button')]
+  buttons.forEach((button) => {
+    button.hidden = needle !== '' && !button.textContent.toLowerCase().includes(needle)
+  })
+  el('deckEmpty').classList.toggle('hidden', buttons.some((button) => !button.hidden))
+}
+
 const render = (rigs) => {
   const host = el('rigs')
   host.textContent = ''
   state.rigs.clear()
   state.pads.clear()
-  rigs.forEach((rig) => (rig.kind === 'deck' ? host.append(deck(rig)) : fishing(rig, host)))
-  el('empty').classList.toggle('hidden', rigs.length > 0)
+  const windows = rigs.filter((rig) => rig.kind !== 'deck')
+  windows.forEach((rig) => fishing(rig, host))
+  const pads = rigs.find((rig) => rig.kind === 'deck')
+  pads ? deck(pads) : ((el('pads').textContent = ''), filterPads())
+  el('empty').classList.toggle('hidden', windows.length > 0)
+  el('tab-fish').classList.toggle('alert', windows.length === 0)
 }
 
 const describe = (rig_state) => {
@@ -418,6 +435,23 @@ const wake = async () => {
   }
 }
 
+const VIEWS = [...document.querySelectorAll('.tabs button')]
+VIEWS.forEach((button) => button.addEventListener('click', () => {
+  VIEWS.forEach((other) => other.classList.toggle('on', other === button))
+  document.querySelectorAll('.view').forEach((view) => {
+    view.hidden = view.id !== `view-${button.dataset.view}`
+  })
+  localStorage.setItem('warcry.view', button.dataset.view)
+}))
+
+const restoreView = () => {
+  const wanted = localStorage.getItem('warcry.view') || 'fish'
+  const button = VIEWS.find((b) => b.dataset.view === wanted)
+  button && button.click()
+}
+
+el('search').addEventListener('input', filterPads)
+
 el('wake').addEventListener('click', wake)
 const unlock = () => {
   audio().resume()
@@ -434,4 +468,5 @@ el('sound').addEventListener('pointerdown', (event) => {
 })
 setInterval(countdown, 200)
 showScore(false)
+restoreView()
 connect()
