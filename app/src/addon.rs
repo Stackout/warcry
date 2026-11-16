@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 const FOLDER: &str = "WarcryBeacon";
 const TOC: &str = include_str!("../../addon/WarcryBeacon/WarcryBeacon.toc");
 const LUA: &str = include_str!("../../addon/WarcryBeacon/WarcryBeacon.lua");
+const LEDGER: &str = include_str!("../../addon/WarcryBeacon/WarcryLedger.lua");
 
 const TONES: [(&str, &[u8]); 8] = [
     (
@@ -97,11 +98,12 @@ pub fn install(flavor: &Path) -> Result<usize> {
     std::fs::create_dir_all(&tones).with_context(|| format!("creating {}", tones.display()))?;
     std::fs::write(target.join("WarcryBeacon.toc"), TOC)?;
     std::fs::write(target.join("WarcryBeacon.lua"), LUA)?;
+    std::fs::write(target.join("WarcryLedger.lua"), LEDGER)?;
     TONES
         .iter()
         .try_for_each(|(name, bytes)| std::fs::write(tones.join(name), bytes))
         .with_context(|| format!("writing tones into {}", tones.display()))?;
-    Ok(2 + TONES.len())
+    Ok(3 + TONES.len())
 }
 
 #[cfg(test)]
@@ -122,9 +124,10 @@ mod tests {
             std::env::temp_dir().join(format!("warcry-addon-{}/_test_", std::process::id()));
         std::fs::create_dir_all(&flavor).unwrap();
         assert_eq!(installed(&flavor), None);
-        assert_eq!(install(&flavor).unwrap(), 10);
+        assert_eq!(install(&flavor).unwrap(), 11);
         assert_eq!(installed(&flavor), Some(version()));
         assert!(addons(&flavor).join("tones").join("t7.ogg").exists());
+        assert!(addons(&flavor).join("WarcryLedger.lua").exists());
         std::fs::remove_dir_all(flavor.parent().unwrap()).ok();
     }
 

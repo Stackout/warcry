@@ -28,6 +28,17 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+  addon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Lua
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Check and test the addon
+        run: |
+          for file in addon/WarcryBeacon/*.lua; do luac5.4 -p "$file"; done
+          cd addon/tests && lua5.4 ledger_test.lua
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

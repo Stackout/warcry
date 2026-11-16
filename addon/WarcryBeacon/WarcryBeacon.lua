@@ -1,3 +1,21 @@
+Warcry = Warcry or {}
+
+local listeners = {}
+
+function Warcry.on(event, fn)
+  listeners[event] = listeners[event] or {}
+  table.insert(listeners[event], fn)
+end
+
+function Warcry.emit(event, ...)
+  for _, fn in ipairs(listeners[event] or {}) do
+    local ok, why = pcall(fn, ...)
+    if not ok then
+      print("|cffffb347Warcry|r: " .. tostring(why))
+    end
+  end
+end
+
 local TONES = "Interface\\AddOns\\WarcryBeacon\\tones\\"
 local SPACING = 0.23
 local SETTLE = 0.6
@@ -102,6 +120,8 @@ local function started(spellID)
     return
   end
   looted = false
+  Warcry.casting = true
+  Warcry.emit("cast")
   emit(CAST_STARTED)
   checkLure()
 end
@@ -110,7 +130,9 @@ local function stopped(spellID)
   if not FISHING[spellID] then
     return
   end
+  Warcry.casting = false
   C_Timer.After(SETTLE, function()
+    Warcry.emit("settled", looted)
     if looted then
       emit(CAUGHT)
       return
@@ -131,6 +153,7 @@ local handlers = {}
 function handlers.PLAYER_LOGIN()
   warnBackground()
   announce()
+  Warcry.emit("login")
 end
 
 function handlers.PLAYER_ENTERING_WORLD(initial, reloading)
@@ -184,8 +207,27 @@ end
 frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", "player")
 frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
 
+local function help()
+  print("|cffffb347Warcry|r: /warcry gold, /warcry reset, /warcry id")
+end
+
 SLASH_WARCRY1 = "/warcry"
-SlashCmdList.WARCRY = function()
-  print("|cffffb347Warcry Beacon|r: sounding identity")
-  announce()
+SlashCmdList.WARCRY = function(argument)
+  local word = string.lower(string.trim(argument or ""))
+  if word == "gold" or word == "fish" then
+    Warcry.goldUI.toggle()
+    return
+  end
+  if word == "reset" then
+    Warcry.ledger.start()
+    Warcry.goldUI.show()
+    print("|cffffb347Warcry|r: fishing session reset")
+    return
+  end
+  if word == "id" or word == "" then
+    print("|cffffb347Warcry Beacon|r: sounding identity")
+    announce()
+    return
+  end
+  help()
 end
