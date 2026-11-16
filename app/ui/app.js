@@ -382,6 +382,89 @@ const seatRow = (characters, chosen) => (seat, index) => el('li', {},
   el('div', { className: 'phrases' }, ...seat.buttons.map((b) => el('span', { textContent: b }))),
 )
 
+const SILVER = 100
+const GOLD = 100 * SILVER
+
+const money = (copper) => {
+  if (!copper) return '0g'
+  const gold = Math.floor(copper / GOLD)
+  const silver = Math.floor((copper % GOLD) / SILVER)
+  const bronze = copper % SILVER
+  if (gold) return `${gold}g ${silver}s`
+  if (silver) return `${silver}s ${bronze}c`
+  return `${bronze}c`
+}
+
+const spell = (seconds) => {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours) return `${hours}h ${minutes}m`
+  return `${minutes}m`
+}
+
+const when = (stamp) => new Date(stamp * 1000).toLocaleString([], {
+  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+})
+
+const tile = (label, value, kind) => el('div', { className: kind ? `tile ${kind}` : 'tile' },
+  el('b', { textContent: value }),
+  el('span', { textContent: label }),
+)
+
+const rateOf = (l) => (l.seconds >= 60 ? `${money(l.per_hour)} /hr` : 'not yet')
+
+const missOf = (l) => (l.casts ? `${Math.round((l.casts - l.catches) / l.casts * 100)}%` : '0%')
+
+const namedRow = (name, meta, amount) => el('li', { className: 'ledger' },
+  el('div', {},
+    el('b', { textContent: name }),
+    el('span', { className: 'meta', textContent: meta }),
+  ),
+  el('span', { className: 'amount', textContent: amount }),
+)
+
+const renderFishing = (l) => {
+  $('fish-tiles').replaceChildren(
+    tile('earned', money(l.worth), 'gold'),
+    tile('per hour', rateOf(l), 'gold'),
+    tile('caught', String(l.catches)),
+    tile('cast', String(l.casts)),
+    tile('missed', missOf(l)),
+    tile('fishing', spell(l.seconds)),
+  )
+  const spots = new Map()
+  const fish = new Map()
+  for (const session of l.sessions) {
+    for (const spot of session.spots) {
+      const got = spots.get(spot.zone) || { catches: 0, auction: 0 }
+      spots.set(spot.zone, { catches: got.catches + spot.catches, auction: got.auction + spot.auction })
+    }
+    for (const one of session.fish) {
+      const got = fish.get(one.name) || { count: 0, auction: 0, vendor: 0 }
+      fish.set(one.name, {
+        count: got.count + one.count,
+        auction: got.auction + one.auction,
+        vendor: got.vendor + one.vendor,
+      })
+    }
+  }
+  const ranked = (map) => [...map.entries()].sort((a, b) => b[1].auction - a[1].auction)
+  $('fish-spots').replaceChildren(...ranked(spots).map(([zone, s]) =>
+    namedRow(zone, `${s.catches} caught`, money(s.auction))))
+  $('fish-top').replaceChildren(...ranked(fish).map(([name, f]) =>
+    namedRow(name, f.vendor > f.auction ? `x${f.count} · vendor pays more` : `x${f.count}`,
+      money(Math.max(f.auction, f.vendor)))))
+  $('fish-sessions').replaceChildren(...l.sessions.map((s) =>
+    namedRow(when(s.started),
+      `${s.casts} cast · ${s.catches} caught · ${spell(s.seconds)}${s.seconds >= 60 ? ` · ${money(s.per_hour)} /hr` : ''}`,
+      money(s.worth))))
+  $('fish-live').textContent = l.sessions.length
+    ? `${l.sessions.length} session${l.sessions.length === 1 ? '' : 's'} saved`
+    : 'nothing saved yet — fish, then /reload'
+}
+
+const loadFishing = () => call('fishing_ledger').then(renderFishing)
+
 const renderPhone = (s) => {
   const live = s.companion
   const names = s.commands.map((c) => [c.name, c.name])
@@ -638,7 +721,10 @@ RAIL.forEach((button) => button.addEventListener('click', () => {
   RAIL.forEach((b) => b.classList.toggle('active', b === button))
   document.querySelectorAll('.tab').forEach((tab) => { tab.hidden = tab.id !== `tab-${button.dataset.tab}` })
   $('view').textContent = button.querySelector('em').textContent
+  if (button.dataset.tab === 'fishing') loadFishing()
 }))
+
+$('fish-refresh').addEventListener('click', loadFishing)
 
 const SLASH = [
   ['#showtooltip', 'Show the icon and tooltip of whatever this macro would cast right now. Put it on the first line.'],

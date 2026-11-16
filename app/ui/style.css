@@ -430,6 +430,17 @@ pre.macro-body {
 .seats b { font-size: 12px; font-weight: 600; }
 .seats .meta { font-size: 11px; }
 .seats .seat-who { width: 100%; margin: 2px 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin: 12px; }
+.tile {
+  padding: 10px 12px; border-radius: var(--radius);
+  background: var(--sunken); border: 1px solid var(--line);
+}
+.tile b { display: block; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.tile span { font-size: 11px; color: var(--muted); }
+.tile.gold b { color: var(--ember); }
+.seats li.ledger { grid-template-columns: 1fr auto; align-items: center; gap: 10px; }
+.seats li.ledger > div { display: grid; gap: 2px; min-width: 0; }
+.seats .amount { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 600; color: var(--text); }
 .seats .phrases { display: flex; flex-wrap: wrap; gap: 5px; }
 .seats .phrases span { font-size: 11px; padding: 2px 7px; border-radius: var(--radius); background: var(--raised-2); color: var(--muted); }
 

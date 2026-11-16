@@ -2,6 +2,8 @@
 
 mod addon;
 mod companion;
+mod fishing;
+mod lua;
 mod macros;
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -858,6 +860,12 @@ fn companion_stop(app: AppHandle) {
 }
 
 #[tauri::command]
+async fn fishing_ledger(app: AppHandle) -> Result<fishing::Ledger, String> {
+    let settings = app.state::<App>().config.lock().deck.clone();
+    Ok(fishing::read(&companion::flavor(&settings)))
+}
+
+#[tauri::command]
 async fn set_deck(app: AppHandle, deck: Deck) -> Result<(), String> {
     let state = app.state::<App>();
     let restart = {
@@ -1139,7 +1147,8 @@ fn main() {
             companion_start,
             companion_stop,
             set_deck,
-            set_pad
+            set_pad,
+            fishing_ledger
         ])
         .run(tauri::generate_context!())
         .expect("failed to start Warcry");

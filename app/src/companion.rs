@@ -201,7 +201,7 @@ pub fn announce(app: &AppHandle) {
         .for_each(|live| live.companion.announce());
 }
 
-fn flavor(settings: &Deck) -> PathBuf {
+pub fn flavor(settings: &Deck) -> PathBuf {
     settings
         .wow
         .clone()

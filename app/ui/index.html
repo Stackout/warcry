@@ -23,6 +23,10 @@
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16M11.5 9h6M11.5 13h4"/></svg>
         <em>Macros</em>
       </button>
+      <button data-tab="fishing" title="Fishing">
+        <svg viewBox="0 0 24 24"><path d="M4 4l9 9M13 13a2.5 2.5 0 11-3.5 3.5"/><path d="M3 20c2-2 4 0 6-1.5"/></svg>
+        <em>Fishing</em>
+      </button>
       <button data-tab="phone" title="Phone deck">
         <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/></svg>
         <em>Phone</em>
@@ -86,6 +90,36 @@
         <div id="commands-mount"></div>
       </div>
 
+      <div class="tab" id="tab-fishing" hidden>
+        <section class="group">
+          <h2>This session <small id="fish-live" class="meta"></small></h2>
+          <p class="note">The in-game window (<code>/warcry gold</code>) is the live one: it prices
+            every catch through Auctionator the moment you loot it. World of Warcraft only writes
+            its saved data at a reload or logout, so these totals catch up when you
+            <code>/reload</code>.</p>
+          <div class="tiles" id="fish-tiles"></div>
+          <div class="rows">
+            <div class="rw">
+              <span>Saved data</span>
+              <div class="ctl">
+                <button id="fish-refresh" class="ghost">Re-read</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section class="group">
+          <h2>Best water <small class="meta">by what it paid</small></h2>
+          <ul class="seats" id="fish-spots"></ul>
+        </section>
+        <section class="group">
+          <h2>Best fish <small class="meta">by what they are worth</small></h2>
+          <ul class="seats" id="fish-top"></ul>
+        </section>
+        <section class="group">
+          <h2>Sessions</h2>
+          <ul class="seats" id="fish-sessions"></ul>
+        </section>
+      </div>
       <div class="tab" id="tab-phone" hidden>
         <section class="group">
           <h2>Phone deck <small id="phone-state" class="meta"></small></h2>
