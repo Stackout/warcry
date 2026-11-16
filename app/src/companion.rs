@@ -233,10 +233,17 @@ fn sharing(app: &AppHandle, profile: &Arc<Profile>) -> Arc<Shared> {
 fn fired(app: &AppHandle, pids: &[u32], press: Press) -> Result<String> {
     let profile = current(app).context("no profile is loaded")?;
     let settings = app.state::<App>().config.lock().deck.clone();
+    let at = window_pid(pids, &press);
     match choose(&profile, &settings, &press) {
-        Some(index) => Ok(run(app, &profile, index)),
-        None => tap(app, pids.get(press.rig as usize).copied()),
+        Some(index) => Ok(run(app, &profile, index, at)),
+        None => tap(app, at),
     }
+}
+
+fn window_pid(pids: &[u32], press: &Press) -> Option<u32> {
+    (press.rig != deck::DECK)
+        .then(|| pids.get(press.rig as usize).copied())
+        .flatten()
 }
 
 pub fn choose(profile: &Profile, settings: &Deck, press: &Press) -> Option<usize> {
@@ -261,9 +268,9 @@ fn named(profile: &Profile, name: &str) -> Option<usize> {
         .position(|command| command.display_name().eq_ignore_ascii_case(name.trim()))
 }
 
-fn run(app: &AppHandle, profile: &Arc<Profile>, index: usize) -> String {
+fn run(app: &AppHandle, profile: &Arc<Profile>, index: usize, at: Option<u32>) -> String {
     let name = profile.commands[index].display_name();
-    actions::trigger(&sharing(app, profile), index, "phone", drop);
+    actions::trigger_at(&sharing(app, profile), index, "phone", at, drop);
     name
 }
 
@@ -280,9 +287,17 @@ fn tap(app: &AppHandle, pid: Option<u32>) -> Result<String> {
 
 fn noticed(app: &AppHandle, seen: Seen) {
     told(seen).into_iter().for_each(|notice| {
+        logged(&notice);
         speak(app, &notice);
         drop(app.emit("companion", notice));
     })
+}
+
+fn logged(notice: &Notice) {
+    match notice.urgency >= 1 {
+        true => tracing::warn!("{}", notice.text),
+        false => tracing::info!("{}", notice.text),
+    }
 }
 
 fn speak(app: &AppHandle, notice: &Notice) {
@@ -474,5 +489,20 @@ mod tests {
         let library = sounds();
         assert!(!library.is_empty(), "the embedded sound library is empty");
         assert!(library.iter().any(|sound| sound.name == BITE));
+    }
+
+    #[test]
+    fn each_window_press_is_aimed_at_that_window_only() {
+        let pids = [41951, 42003];
+        let press = |rig| Press {
+            rig,
+            slot: 0,
+            seq: 1,
+            at_ms: 0,
+        };
+        assert_eq!(window_pid(&pids, &press(0)), Some(41951));
+        assert_eq!(window_pid(&pids, &press(1)), Some(42003));
+        assert_eq!(window_pid(&pids, &press(2)), None);
+        assert_eq!(window_pid(&pids, &press(deck::DECK)), None);
     }
 }

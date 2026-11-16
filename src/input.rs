@@ -18,6 +18,7 @@ impl EnigoSink {
     pub fn new() -> Result<Self> {
         Enigo::new(&Settings {
             release_keys_when_dropped: true,
+            independent_of_keyboard_state: false,
             ..Settings::default()
         })
         .map(Self)

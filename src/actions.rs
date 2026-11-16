@@ -5,6 +5,7 @@ use crate::profile::{Action, Profile, Switch, Target, TargetMode};
 use crate::{speech_out, window};
 use anyhow::{Context, Result, anyhow, ensure};
 use parking_lot::RwLock;
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::SeqCst};
 use std::thread::JoinHandle;
@@ -12,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MIN_HOLD_MS: u64 = 30;
 const MAX_DEPTH: u8 = 16;
-const SLOW_MS: u64 = 400;
+const SLOW_MS: u64 = 900;
 
 pub struct Shared {
     profile: RwLock<Arc<Profile>>,
@@ -85,6 +86,16 @@ pub fn trigger(
     reason: &str,
     done: impl FnOnce(Done) + Send + 'static,
 ) -> JoinHandle<()> {
+    trigger_at(shared, index, reason, None, done)
+}
+
+pub fn trigger_at(
+    shared: &Arc<Shared>,
+    index: usize,
+    reason: &str,
+    at: Option<u32>,
+    done: impl FnOnce(Done) + Send + 'static,
+) -> JoinHandle<()> {
     let shared = shared.clone();
     let profile = shared.profile();
     let command = profile.commands[index].display_name();
@@ -93,7 +104,7 @@ pub fn trigger(
         .name(format!("command {command:?}"))
         .spawn(move || {
             let began = Instant::now();
-            let error = execute(&shared, &profile, index)
+            let error = execute_at(&shared, &profile, index, at)
                 .err()
                 .map(|e| format!("{e:#}"));
             let outcome = Done {
@@ -108,6 +119,21 @@ pub fn trigger(
 }
 
 pub fn execute(shared: &Shared, profile: &Profile, index: usize) -> Result<()> {
+    execute_at(shared, profile, index, None)
+}
+
+fn aimed(target: Option<&Target>, at: Option<u32>) -> Option<Cow<'_, Target>> {
+    let target = target?;
+    Some(match at {
+        Some(pid) => Cow::Owned(Target {
+            pid: Some(pid),
+            ..target.clone()
+        }),
+        None => Cow::Borrowed(target),
+    })
+}
+
+pub fn execute_at(shared: &Shared, profile: &Profile, index: usize, at: Option<u32>) -> Result<()> {
     let command = &profile.commands[index];
     command.stop_others.then(|| shared.stop_all());
     profile
@@ -125,8 +151,8 @@ pub fn execute(shared: &Shared, profile: &Profile, index: usize) -> Result<()> {
         .as_ref()
         .or(profile.target.as_ref())
         .filter(|_| !command.no_target);
-    match target {
-        Some(t) => targeted(ctx, t, &command.actions),
+    match aimed(target, at) {
+        Some(t) => targeted(ctx, &t, &command.actions),
         None => drive(EnigoSink::new()?, ctx, &command.actions),
     }
 }
@@ -515,5 +541,23 @@ mod tests {
     #[test]
     fn random_in_range() {
         (0..100).for_each(|_| assert!((10..=20).contains(&random_between(10, 20))));
+    }
+
+    #[test]
+    fn aiming_at_a_window_keeps_the_target_but_replaces_the_pid() {
+        let target = Target {
+            title: Some("World of Warcraft".into()),
+            process: Some("Wow".into()),
+            class: None,
+            pid: Some(111),
+            mode: TargetMode::Focus,
+        };
+        let aimed_elsewhere = aimed(Some(&target), Some(222)).unwrap();
+        assert_eq!(aimed_elsewhere.pid, Some(222));
+        assert_eq!(aimed_elsewhere.title.as_deref(), Some("World of Warcraft"));
+        assert_eq!(aimed_elsewhere.mode, TargetMode::Focus);
+        let untouched = aimed(Some(&target), None).unwrap();
+        assert_eq!(untouched.pid, Some(111));
+        assert!(aimed(None, Some(222)).is_none());
     }
 }

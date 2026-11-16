@@ -484,7 +484,7 @@ const addFeed = (note) => {
   $('feed-empty').hidden = true
 }
 
-const SLOW = 400
+const SLOW = 900
 
 const addOutcome = (note) => {
   if (!note.error && note.millis < SLOW) return
